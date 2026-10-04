@@ -8,10 +8,10 @@
     "kosko-assist": "bin/kosko-assist.mjs"
   },
   "engines": {
-    "node": ">=22.5"
+    "node": ">=22.16"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --no-warnings=ExperimentalWarning --test test/*.test.mjs"
   },
   "license": "Apache-2.0"
 }
