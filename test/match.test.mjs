@@ -112,6 +112,16 @@ test('decide: title first, then a clear text lead, else unresolved', () => {
   assert.deepEqual(decide({ title: 'X', text: '' }, []), { outcome: 'miss' });
 });
 
+test('the summary never prints a control character from a title or file name', () => {
+  const evil = '\u001b[2K\rPASS\u001b]0;owned\u0007';
+  const report = { files: ['x.enex'], localNotes: 1, matched: 0, passBar: 0.99, pass: false, fileErrors: [{ file: `bad${evil}.enex`, error: 'malformed-xml' }],
+    counts: { enexNotes: 1, single: 0, title: 0, text: 0, unresolved: 0, miss: 1, noCreated: 0, claimedTwice: 0 },
+    named: { unresolved: [], noCreated: [], claimedTwice: [], miss: [{ file: 'x.enex', title: `Lost ${evil}`, created: '20140304T103015Z' }] } };
+  const out = renderMatch(report);
+  assert.doesNotMatch(out, /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/); // newlines between lines are ours
+  assert.match(out, /Lost \uFFFD\[2K\uFFFDPASS/);
+});
+
 test('overlap and enmlText', () => {
   assert.equal(overlap('a b c', 'a b c'), 1);
   assert.equal(overlap('', 'a'), 0);

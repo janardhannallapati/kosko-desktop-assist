@@ -120,6 +120,12 @@ export async function matchExports(account, files, { read = readEnex, blobOf = o
   };
 }
 
+// Titles and file names come from export files, which anyone can write. Printed raw, an ESC sequence in a title could
+// rewrite the terminal (fake a PASS line, hide a miss). C0/C1 controls and DEL become U+FFFD; the JSON report keeps
+// the original text, because JSON escapes controls itself.
+const CONTROLS = /[\u0000-\u001f\u007f-\u009f]/g;
+export const printable = (text) => String(text ?? '').replace(CONTROLS, '\uFFFD');
+
 /** The one-screen summary: counts, the rate against the bar, and every note that did not match, by title. */
 export function renderMatch(report) {
   const c = report.counts;
@@ -139,9 +145,9 @@ export function renderMatch(report) {
     ['No <created>', report.named.noCreated], ['Claimed twice', report.named.claimedTwice]]) {
     if (!list.length) continue;
     lines.push('', `${label}:`);
-    for (const n of list) lines.push(`  ${n.file}: ${n.title}${n.created ? `  (${n.created})` : ''}`);
+    for (const n of list) lines.push(`  ${printable(n.file)}: ${printable(n.title)}${n.created ? `  (${printable(n.created)})` : ''}`);
   }
-  for (const e of report.fileErrors) lines.push('', `Could not read all of ${e.file}: ${e.error}`);
+  for (const e of report.fileErrors) lines.push('', `Could not read all of ${printable(e.file)}: ${printable(e.error)}`);
   lines.push('', 'Only counts and titles are shown or written. Nothing was sent anywhere.');
   return lines.join('\n');
 }

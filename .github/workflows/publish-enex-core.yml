@@ -31,11 +31,13 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
       # Trusted publishing needs npm 11.5.1+; npm 11 also avoids npm 10.9's crash resolving vitest's peers.
-      - run: npm install -g npm@11
+      - run: npm install -g npm@11 && npm -v
       - name: Tag matches the package version
         run: |
           want="enex-core-v$(node -p "require('./package.json').version")"
           [ "$GITHUB_REF_NAME" = "$want" ] || { echo "tag $GITHUB_REF_NAME does not match $want"; exit 1; }
       - run: npm ci
       - run: npm test
-      - run: npm publish
+      # Verbose: a trusted-publishing refusal is a bare 404, and only the verbose log shows whether npm tried the
+      # OIDC exchange and what the registry said to it.
+      - run: npm publish --loglevel verbose
