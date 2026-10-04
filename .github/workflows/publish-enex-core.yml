@@ -1,0 +1,41 @@
+# Publishes @kosko-app/enex-core to npm by TRUSTED PUBLISHING: npm trusts this workflow, in this repo, through
+# GitHub's short-lived OIDC identity. No npm token is stored anywhere, nobody types a 2FA code, and every release
+# carries a provenance attestation linking it to the exact commit and run that built it.
+#
+# Release: bump packages/enex-core/package.json's version, commit, push, then push a tag `enex-core-v<version>`.
+# The `npm-publish` environment holds the run until the owner approves it in GitHub.
+name: publish enex-core
+
+on:
+  push:
+    tags: ['enex-core-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # npm's trusted publishing does not support self-hosted runners yet, so this one runs on GitHub's.
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write # the OIDC token npm exchanges for a one-time publish credential
+    defaults:
+      run:
+        working-directory: packages/enex-core
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1+; npm 11 also avoids npm 10.9's crash resolving vitest's peers.
+      - run: npm install -g npm@11
+      - name: Tag matches the package version
+        run: |
+          want="enex-core-v$(node -p "require('./package.json').version")"
+          [ "$GITHUB_REF_NAME" = "$want" ] || { echo "tag $GITHUB_REF_NAME does not match $want"; exit 1; }
+      - run: npm ci
+      - run: npm test
+      - run: npm publish

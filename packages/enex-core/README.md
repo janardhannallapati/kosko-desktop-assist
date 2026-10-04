@@ -49,4 +49,14 @@ npm install   # npm 11 or later: npm 10.9 crashes resolving vitest's peers
 npm test      # vitest; the package's own tests plus a boundary scan of its imports
 ```
 
+## Releasing
+
+Releases are published by `.github/workflows/publish-enex-core.yml` through npm's trusted publishing: no npm token
+exists, and each release carries a provenance attestation tying it to the commit that built it.
+
+1. Bump `version` in `package.json` and commit.
+2. Push a tag `enex-core-v<version>`, e.g. `git tag enex-core-v0.1.1 && git push origin enex-core-v0.1.1`.
+3. Approve the run in GitHub (the `npm-publish` environment waits for the owner).
+4. In each consumer (Kosko, the desktop tool), pin the new version exact and run its full suite.
+
 Licensed under Apache-2.0.
