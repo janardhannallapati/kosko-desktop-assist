@@ -34,7 +34,7 @@ function isInside(child, parent) {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
-function pickAccount(dataDir, accountId) {
+export function pickAccount(dataDir, accountId) {
   const accounts = listAccounts(dataDir);
   if (!accounts.length) throw new Error(`no Evernote accounts in ${dataDir}`);
   const ids = accounts.map((a) => `User${a.userId}`).join(', ');

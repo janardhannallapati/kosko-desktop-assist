@@ -19,6 +19,9 @@ Moves a whole Evernote account into [Kosko](https://kosko.app) from your own com
 - `dry-run`: writes the whole import plan for one account to a folder you choose (`kosko-plan.json`, readable
   only by you), plus a one-screen summary. Every number is checked against a direct count of Evernote's
   database, and the run fails if any differs. Nothing is sent.
+- `match`: reads Evernote exports (`.enex`) and checks that each note finds exactly one note in the local database by
+  its creation time, the key Kosko uses for notes from an export. It prints counts and names, by title, every note
+  that did not match. Nothing is sent anywhere.
 - `probe-mcp`: a measurement tool that checks how fast Evernote's MCP server hands out notes. It never stores
   note titles or bodies, and it never writes your tokens to disk.
 
@@ -26,6 +29,7 @@ Moves a whole Evernote account into [Kosko](https://kosko.app) from your own com
 node bin/kosko-assist.mjs accounts                       # Windows / macOS: finds Evernote's folder itself
 node bin/kosko-assist.mjs accounts --data-dir <folder>   # anywhere else, e.g. WSL: /mnt/c/Users/<you>/AppData/Roaming/Evernote
 node bin/kosko-assist.mjs dry-run --out ./kosko-dry-run    # add --data-dir as above where needed
+node bin/kosko-assist.mjs match ./my-exports --out ./kosko-match   # a folder of .enex files, or the files themselves
 node bin/kosko-assist.mjs probe-mcp --out ./probe-out
 npm test
 ```

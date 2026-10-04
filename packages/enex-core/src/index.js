@@ -4,6 +4,8 @@ export { prepareEnml } from './enml/enml-source.js';
 export { isTextPreserved, sourceText, docText } from './enml/enml-audit.js';
 export { DROPPED, MAX_DEPTH } from './enml/enml-prepass.js';
 export { fingerprintNote, assignFingerprints, FINGERPRINT_SCHEME } from './fingerprint.js';
+export { readEnex } from './enex/enex-reader.js';
+export { formatEnexDate } from './enex/enex-date.js';
 export { NOTE_SCHEMA_EXTENSIONS, noteSchema, EvernoteLinkOrigin } from './schema/note-schema.js';
 export { NoteImage, NoteAttachment } from './schema/media-nodes.js';
 export { RawHtml, NoteLocked, OPAQUE_EXTENSIONS } from './schema/opaque-nodes.js';

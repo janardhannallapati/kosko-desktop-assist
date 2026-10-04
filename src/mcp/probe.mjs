@@ -1,4 +1,4 @@
-// The MCP probe (Kosko doc 449): sign in once, then measure how fast Evernote's MCP server hands out notes.
+// The MCP probe (Kosko doc 461): sign in once, then measure how fast Evernote's MCP server hands out notes.
 //
 // The tools' parameters are not published, so the run is steered by a plan file the operator writes after reading
 // tools.json: a plan with `samples` runs those calls and writes their shapes (content removed) to samples-N.json;

@@ -36,7 +36,7 @@ describe('package boundary', () => {
           continue;
         }
         const name = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0];
-        if (!(name in pkg.peerDependencies)) bad.push(`${file}: ${spec}`);
+        if (!(name in pkg.peerDependencies) && !(name in (pkg.dependencies ?? {})) && !spec.startsWith('node:')) bad.push(`${file}: ${spec}`);
       }
     }
     expect(bad).toEqual([]);
@@ -46,8 +46,31 @@ describe('package boundary', () => {
     expect(specifiers("import { x } from './leaves/note-mime.js';")).toEqual(['./leaves/note-mime.js']);
   });
 
-  it('has no runtime dependencies, so nothing transitive can arrive through it', () => {
-    expect(pkg.dependencies ?? {}).toEqual({});
+  it('has exactly two runtime dependencies, the ENEX reader\'s, each pinned exact (owner, 2026-10-04)', () => {
+    expect(Object.keys(pkg.dependencies ?? {}).sort()).toEqual(['hash-wasm', 'sax']);
+    for (const v of Object.values(pkg.dependencies)) expect(v).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('./enex reaches no Tiptap module, so the desktop tool installs only sax and hash-wasm', () => {
+    const entry = join(ROOT, pkg.exports['./enex']);
+    const seen = new Set();
+    const bare = [];
+    const walk = (file) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      for (const spec of specifiers(readFileSync(file, 'utf8'))) {
+        if (spec.startsWith('.')) walk(resolve(dirname(file), spec));
+        else bare.push(spec);
+      }
+    };
+    walk(entry);
+    expect(seen.size).toBeGreaterThan(4); // it walked the reader, not just the index
+    expect(bare.filter((s) => s.startsWith('@tiptap/'))).toEqual([]);
+    expect([...new Set(bare)].sort()).toEqual(['hash-wasm', 'sax']);
+  });
+
+  it('marks every Tiptap peer optional (needed only through the root entry)', () => {
+    for (const name of Object.keys(pkg.peerDependencies)) expect(pkg.peerDependenciesMeta?.[name]?.optional, name).toBe(true);
   });
 
   it('pins every Tiptap peer exact, to one version', () => {

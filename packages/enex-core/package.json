@@ -1,7 +1,7 @@
 {
   "name": "@kosko-app/enex-core",
-  "version": "0.1.0",
-  "description": "Kosko's ENML-to-Tiptap converter, the fp1 Evernote note fingerprint and the note schema they need. One copy, shared by Kosko and kosko-desktop-assist.",
+  "version": "0.2.0",
+  "description": "Kosko's ENEX reader, ENML-to-Tiptap converter, fp1 Evernote note fingerprint and the note schema they need. One copy, shared by Kosko and kosko-desktop-assist.",
   "type": "module",
   "license": "Apache-2.0",
   "sideEffects": false,
@@ -12,6 +12,7 @@
   },
   "exports": {
     ".": "./src/index.js",
+    "./enex": "./src/enex/index.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -25,6 +26,10 @@
   "scripts": {
     "test": "vitest run"
   },
+  "dependencies": {
+    "hash-wasm": "4.12.0",
+    "sax": "1.6.1"
+  },
   "peerDependencies": {
     "@tiptap/core": "3.30.5",
     "@tiptap/pm": "3.30.5",
@@ -37,6 +42,41 @@
     "@tiptap/extension-text-align": "3.30.5",
     "@tiptap/extension-highlight": "3.30.5",
     "@tiptap/extension-list": "3.30.5"
+  },
+  "peerDependenciesMeta": {
+    "@tiptap/core": {
+      "optional": true
+    },
+    "@tiptap/pm": {
+      "optional": true
+    },
+    "@tiptap/starter-kit": {
+      "optional": true
+    },
+    "@tiptap/extension-image": {
+      "optional": true
+    },
+    "@tiptap/extension-table": {
+      "optional": true
+    },
+    "@tiptap/extension-superscript": {
+      "optional": true
+    },
+    "@tiptap/extension-subscript": {
+      "optional": true
+    },
+    "@tiptap/extension-text-style": {
+      "optional": true
+    },
+    "@tiptap/extension-text-align": {
+      "optional": true
+    },
+    "@tiptap/extension-highlight": {
+      "optional": true
+    },
+    "@tiptap/extension-list": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@tiptap/core": "3.30.5",
