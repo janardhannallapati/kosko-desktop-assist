@@ -1,0 +1,17 @@
+{
+  "name": "kosko-desktop-assist",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Moves a whole Evernote account into Kosko from the user's own computer. Reads Evernote's local data read-only; the database file never leaves the machine.",
+  "type": "module",
+  "bin": {
+    "kosko-assist": "bin/kosko-assist.mjs"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "license": "Apache-2.0"
+}
