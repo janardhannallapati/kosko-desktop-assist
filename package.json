@@ -15,5 +15,8 @@
     "test:core": "npm --prefix packages/enex-core test",
     "test:all": "npm test && npm run test:core"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@kosko-app/enex-core": "0.2.0"
+  }
 }
