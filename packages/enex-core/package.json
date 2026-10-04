@@ -1,0 +1,59 @@
+{
+  "name": "@kosko-app/enex-core",
+  "version": "0.1.0",
+  "description": "Kosko's ENML-to-Tiptap converter, the fp1 Evernote note fingerprint and the note schema they need. One copy, shared by Kosko and kosko-desktop-assist.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/janardhannallapati/kosko-desktop-assist.git",
+    "directory": "packages/enex-core"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@tiptap/core": "3.30.5",
+    "@tiptap/pm": "3.30.5",
+    "@tiptap/starter-kit": "3.30.5",
+    "@tiptap/extension-image": "3.30.5",
+    "@tiptap/extension-table": "3.30.5",
+    "@tiptap/extension-superscript": "3.30.5",
+    "@tiptap/extension-subscript": "3.30.5",
+    "@tiptap/extension-text-style": "3.30.5",
+    "@tiptap/extension-text-align": "3.30.5",
+    "@tiptap/extension-highlight": "3.30.5",
+    "@tiptap/extension-list": "3.30.5"
+  },
+  "devDependencies": {
+    "@tiptap/core": "3.30.5",
+    "@tiptap/pm": "3.30.5",
+    "@tiptap/starter-kit": "3.30.5",
+    "@tiptap/extension-image": "3.30.5",
+    "@tiptap/extension-table": "3.30.5",
+    "@tiptap/extension-superscript": "3.30.5",
+    "@tiptap/extension-subscript": "3.30.5",
+    "@tiptap/extension-text-style": "3.30.5",
+    "@tiptap/extension-text-align": "3.30.5",
+    "@tiptap/extension-highlight": "3.30.5",
+    "@tiptap/extension-list": "3.30.5",
+    "jsdom": "29.1.1",
+    "vitest": "4.1.11"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

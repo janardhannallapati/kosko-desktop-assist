@@ -33,3 +33,9 @@ npm test
 Requires Node 22.16 or later (for `node:sqlite`'s backup API). No dependencies.
 
 Licensed under the Apache License, Version 2.0 (see `LICENSE`).
+
+## The shared package
+
+[`packages/enex-core`](packages/enex-core/README.md) is published as `@kosko-app/enex-core`. It holds the ENML
+converter, the `fp1` note fingerprint and the note schema, the parts this tool and Kosko's web import must agree on
+exactly. Both pin it to one exact version. Its tests run with `npm run test:core`; `npm run test:all` runs both suites.
