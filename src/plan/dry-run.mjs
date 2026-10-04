@@ -1,6 +1,6 @@
 // The dry run: read the whole account, write the exact plan to a folder the user chose, and prove the reading is
 // complete by comparing what was written with the reader's separate count(*) queries. Sends nothing.
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 import { registerCleanup } from '../reader/snapshot.mjs';
@@ -165,8 +165,8 @@ export async function runDryRun({ dataDir, accountId, outDir, tmpRoot, open = op
       windowsOutsideProfile: platform === 'win32' && !isInside(outDir, home)
     });
     const summaryPath = join(outDir, 'kosko-plan-summary.txt');
-    writeFileSync(summaryPath, summaryText, { mode: 0o600 });
-    chmodSync(summaryPath, 0o600);
+    rmSync(summaryPath, { force: true }); // as for the plan: never write through a symlink planted at this name
+    writeFileSync(summaryPath, summaryText, { mode: 0o600, flag: 'wx' });
     log(summaryText);
     return { ok: passed, exitCode: passed ? 0 : 1, planPath: passed ? planPath : null, summaryPath, summaryText, differences };
   } catch (e) {

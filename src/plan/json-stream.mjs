@@ -1,6 +1,6 @@
 // Writes one JSON object to a file a piece at a time, so a 5,532-note plan (or a 100× one) never has to sit in
 // memory as a single string. Arrays are streamed element by element from any iterable.
-import { chmodSync, closeSync, openSync, writeSync } from 'node:fs';
+import { closeSync, fchmodSync, openSync, rmSync, writeSync } from 'node:fs';
 
 // fs.writeSync may write fewer bytes than asked (a full disk, a quota) without throwing; loop until all are written.
 function writeAll(fd, text) {
@@ -15,8 +15,11 @@ function writeAll(fd, text) {
 
 export class JsonObjectWriter {
   constructor(path, { mode = 0o600 } = {}) {
-    this.fd = openSync(path, 'w', mode);
-    chmodSync(path, mode); // the mode argument applies only when the file is created
+    // Never follow what is already at this name: a planted symlink would send the account, in clear, wherever it
+    // points. Remove it (rm does not follow links), then create exclusively: O_CREAT|O_EXCL refuses a symlink.
+    rmSync(path, { force: true });
+    this.fd = openSync(path, 'wx', mode);
+    fchmodSync(this.fd, mode); // on the open file itself, not by path
     this.first = true;
     writeAll(this.fd, '{');
   }

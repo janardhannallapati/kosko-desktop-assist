@@ -237,3 +237,17 @@ test('a process that dies mid-write leaves no half-written plan behind', () => {
   assert.equal(r.status, 3, r.stderr);
   assert.deepEqual(readdirSync(outDir), []);
 });
+
+test('a symlink planted at the .partial or summary name is never written through', { skip: process.platform === 'win32' }, async () => {
+  const acct = buildSyntheticAccount();
+  const outDir = scratch();
+  const victim = join(scratch(), 'victim.txt');
+  writeFileSync(victim, 'UNTOUCHED');
+  symlinkSync(victim, join(outDir, 'kosko-plan.json.partial'));
+  symlinkSync(victim, join(outDir, 'kosko-plan-summary.txt'));
+  const r = await runDryRun({ dataDir: acct.dataDir, outDir, log: quiet });
+  assert.equal(r.ok, true);
+  assert.equal(readFileSync(victim, 'utf8'), 'UNTOUCHED');
+  assert.equal(statSync(victim).mode & 0o777, 0o644);
+  assert.equal(readPlan(outDir).format, 'kosko-plan');
+});
