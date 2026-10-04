@@ -54,3 +54,7 @@ test('no Space line when every note is in a notebook, no other-accounts line whe
 test('one Space note reads as singular', () => {
   assert.match(renderSummary({ ...BASE, counts: { ...BASE.counts, notesWithoutNotebook: 1 } }), /1 note is in a Space/);
 });
+
+test('one stack reads as singular', () => {
+  assert.match(renderSummary({ ...BASE, counts: { ...BASE.counts, stacks: 1 } }), /in 1 stack \(/);
+});

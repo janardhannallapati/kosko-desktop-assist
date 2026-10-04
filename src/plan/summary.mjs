@@ -7,6 +7,7 @@ export function bytes(n) {
   if (n >= 1e3) return `${(n / 1e3).toFixed(1)} KB`;
   return `${n} B`;
 }
+const plural = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`;
 const row = (label, value, note = '') => `  ${label.padEnd(12)}${value.padStart(7)}   ${note}`.trimEnd();
 
 /**
@@ -29,7 +30,7 @@ export function renderSummary(s) {
     `Evernote account User${s.account.userId} (${decodeURIComponent(s.account.host)}), `
       + `database v${s.account.majorVersion} (migration ${s.account.migrationVersion})`,
     row('Notes', num(c.notes), `(${num(c.trashedNotes)} in Evernote's trash, left out)`),
-    row('Notebooks', num(c.notebooks), `in ${num(c.stacks)} stacks (a stack becomes a parent notebook)`),
+    row('Notebooks', num(c.notebooks), `in ${plural(c.stacks, 'stack', 'stacks')} (a stack becomes a parent notebook)`),
     row('Tags', num(c.tags), `${num(c.noteTags)} note–tag links`),
     row('Attachments', num(c.attachments), attNotes.join(', ')),
     row('OCR', num(c.ocr), ocrNote),
