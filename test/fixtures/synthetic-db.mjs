@@ -107,6 +107,7 @@ export function buildSyntheticAccount({ root = mkdtempSync(join(tmpdir(), 'kosko
   const hex = (s) => Buffer.from(s, 'utf8').toString('hex');
   insert(db, 'AttachmentRecognition', { id: ID.aPresent, content: hex(RECO_XML) });
   insert(db, 'AttachmentRecognition', { id: ID.aWrongSize, content: 'zz-not-hex' });
+  insert(db, 'AttachmentRecognition', { id: ID.aMissing, content: '' }); // scanned, no text found
   insert(db, 'AttachmentRecognition', { id: ID.aTrashedNote, content: hex(RECO_XML) });
 
   if (mutate) mutate(db);
@@ -128,6 +129,8 @@ export function buildSyntheticAccount({ root = mkdtempSync(join(tmpdir(), 'kosko
 /** What the reader must report for the account above. */
 export const EXPECTED_COUNTS = Object.freeze({
   notes: 4, trashedNotes: 1, notesWithoutNotebook: 1, notebooks: 4, stacks: 2, tags: 2,
-  noteTags: 2, noteTagsAll: 3, attachments: 5, attachmentBytes: 5 + 7 + 9 + 4 + 1, ocr: 2, ocrAll: 3,
-  emptyPlainText: 2
+  noteTags: 2, noteTagsAll: 3, attachments: 5, attachmentBytes: 5 + 7 + 9 + 4 + 1, ocr: 3, ocrAll: 4,
+  emptyPlainText: 2,
+  // stored OCR on active attachments: the recoIndex XML as hex, plus the 10-char 'zz-not-hex' record, halved
+  ocrStoredBytes: Buffer.byteLength(RECO_XML, 'utf8') + 5
 });

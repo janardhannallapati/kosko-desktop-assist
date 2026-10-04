@@ -21,8 +21,21 @@ function removeDir(dir) {
   rmSync(dir, { recursive: true, force: true });
 }
 
+// Other files that must not outlive the process (the dry run's half-written plan). Run on exit and on a signal.
+const extra = new Set();
+/** Runs fn on exit, Ctrl-C or SIGTERM unless the returned unregister() is called first. */
+export function registerCleanup(fn) {
+  extra.add(fn);
+  hookExit();
+  return () => extra.delete(fn);
+}
+
 // Never stops halfway: one folder that cannot be removed must not leave the others behind.
 function removeAll() {
+  for (const fn of [...extra]) {
+    extra.delete(fn);
+    try { fn(); } catch (e) { process.stderr.write(`kosko-assist: cleanup failed: ${e.message}\n`); }
+  }
   for (const dir of [...live.keys()]) {
     try { removeDir(dir); } catch (e) { process.stderr.write(`kosko-assist: could not delete ${dir}: ${e.message}\n`); }
   }

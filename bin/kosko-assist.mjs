@@ -1,18 +1,27 @@
 #!/usr/bin/env node
 // kosko-assist — moves a whole Evernote account into Kosko. Wave 1 ships only the measurement commands.
+import '../src/quiet-sqlite-warning.mjs';
 import { parseArgs } from 'node:util';
-import { runProbe } from '../src/mcp/probe.mjs';
-import { findDataDirs, listAccounts } from '../src/reader/locate.mjs';
+// Loaded dynamically, AFTER the warning filter: a static import would link node:sqlite (and print its experimental
+// notice) before any module body here runs.
+const { runProbe } = await import('../src/mcp/probe.mjs');
+const { findDataDirs, listAccounts } = await import('../src/reader/locate.mjs');
+const { runDryRun } = await import('../src/plan/dry-run.mjs');
 
 const USAGE = `Usage:
   kosko-assist accounts [--data-dir <Evernote data folder>]
+  kosko-assist dry-run --out <folder> [--data-dir <Evernote data folder>] [--account <user id>]
   kosko-assist probe-mcp --out <dir> [--port 8765] [--max-notes N] [--max-minutes 60] [--plan-wait-minutes 30]
 
 probe-mcp signs you in to Evernote (read only), lists the MCP server's tools into <dir>/tools.json, waits for
 <dir>/plan.json, then measures how fast notes can be fetched. The report holds no note titles or bodies.
 
 accounts lists the Evernote accounts on this computer (user id, database size, last written). It reads file
-names and sizes only.`;
+names and sizes only.
+
+dry-run reads one account (the largest, or --account) from a private copy of Evernote's database and writes the
+whole import plan to <folder>/kosko-plan.json, plus a one-screen summary. It checks every number against a direct
+count of the database and stops with exit code 1 on any difference. Nothing is sent anywhere.`;
 
 const [command, ...rest] = process.argv.slice(2);
 if (command === 'accounts') {
@@ -29,6 +38,19 @@ if (command === 'accounts') {
     }
   }
   process.exit(0);
+}
+if (command === 'dry-run') {
+  const { values } = parseArgs({ args: rest, options: { out: { type: 'string' }, 'data-dir': { type: 'string' }, account: { type: 'string' } } });
+  if (!values.out) { console.error(USAGE); process.exit(2); }
+  const [dataDir] = findDataDirs({ dataDir: values['data-dir'] });
+  if (!dataDir) { console.error('No Evernote data folder found. Pass --data-dir <folder>.'); process.exit(1); }
+  try {
+    const r = await runDryRun({ dataDir, outDir: values.out, accountId: values.account });
+    process.exit(r.exitCode);
+  } catch (e) {
+    console.error(`dry-run: ${e.message}`);
+    process.exit(1);
+  }
 }
 if (command !== 'probe-mcp') { console.error(USAGE); process.exit(command ? 2 : 0); }
 const { values } = parseArgs({

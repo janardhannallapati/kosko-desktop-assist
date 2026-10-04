@@ -66,6 +66,8 @@ function* elements(s, name) {
 
 /** @returns {{ text: string, wordCount: number }} the top candidate of every recognised item, space-joined. */
 export function parseRecoIndex(hex) {
+  // Evernote keeps an empty row when it scanned an image and found no text (3,713 of 25,327 on the owner's account).
+  if (hex === '') return { text: '', wordCount: 0 };
   if (typeof hex !== 'string' || hex.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(hex)) {
     throw new RecoIndexError('OCR record is not valid hex');
   }

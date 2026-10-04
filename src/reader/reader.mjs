@@ -34,6 +34,9 @@ const COUNT_SQL = {
   ocr: `SELECT count(*) c FROM AttachmentRecognition WHERE id IN (SELECT id FROM Attachment WHERE isActive = 1
         AND parent_Note_id IN (SELECT id FROM Nodes_Note WHERE deleted IS NULL))`,
   ocrAll: 'SELECT count(*) c FROM AttachmentRecognition',
+  // R4: how big the stored OCR is (hex, so half its length in bytes), against the words the dry run keeps.
+  ocrStoredBytes: `SELECT coalesce(sum(length(content)), 0) / 2 c FROM AttachmentRecognition WHERE id IN
+        (SELECT id FROM Attachment WHERE isActive = 1 AND parent_Note_id IN (SELECT id FROM Nodes_Note WHERE deleted IS NULL))`,
   emptyPlainText: `SELECT count(*) c FROM Nodes_Note WHERE deleted IS NULL
         AND id NOT IN (SELECT id FROM Offline_Search_Note_Content WHERE content <> '')`
 };

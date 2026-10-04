@@ -40,7 +40,7 @@ test('trashed note, its tags, attachments and OCR are not yielded but counted', 
   const c = a.counts();
   assert.equal(c.trashedNotes, 1);
   assert.equal(c.noteTagsAll, 3);
-  assert.equal(c.ocrAll, 3);
+  assert.equal(c.ocrAll, 4);
 });
 
 test('what the iterators yield equals counts()', () => {
@@ -89,6 +89,7 @@ test('OCR gives the top-candidate text, and a bad record an error while the run 
   assert.deepEqual(ocr.find((x) => x.attachmentId === ID.aPresent), { attachmentId: ID.aPresent, text: RECO_WORDS, wordCount: 3 });
   const bad = ocr.find((x) => x.attachmentId === ID.aWrongSize);
   assert.match(bad.error, /hex/);
+  assert.deepEqual(ocr.find((x) => x.attachmentId === ID.aMissing), { attachmentId: ID.aMissing, text: '', wordCount: 0 });
   assert.equal('text' in bad, false);
 });
 

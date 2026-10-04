@@ -40,6 +40,10 @@ test('hex of something that is not a recoIndex → RecoIndexError', () => {
   assert.throws(() => parseRecoIndex(hex('<html><body>hi</body></html>')), RecoIndexError);
 });
 
+test('an empty record (scanned, nothing found) gives no words, not an error', () => {
+  assert.deepEqual(parseRecoIndex(''), { text: '', wordCount: 0 });
+});
+
 test('an item with no <t> and an empty recoIndex give no words', () => {
   assert.deepEqual(parseRecoIndex(hex('<recoIndex><item><object w="9"/></item></recoIndex>')), { text: '', wordCount: 0 });
   assert.deepEqual(parseRecoIndex(hex('<recoIndex/>')), { text: '', wordCount: 0 });

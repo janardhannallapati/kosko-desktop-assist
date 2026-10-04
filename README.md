@@ -16,12 +16,16 @@ Moves a whole Evernote account into [Kosko](https://kosko.app) from your own com
   images). The snapshot goes in a `0700` temp folder and is deleted when the run ends. Evernote's own files are
   opened read-only and never written. If the database is not a version the reader knows, it refuses to read
   anything.
+- `dry-run`: writes the whole import plan for one account to a folder you choose (`kosko-plan.json`, readable
+  only by you), plus a one-screen summary. Every number is checked against a direct count of Evernote's
+  database, and the run fails if any differs. Nothing is sent.
 - `probe-mcp`: a measurement tool that checks how fast Evernote's MCP server hands out notes. It never stores
   note titles or bodies, and it never writes your tokens to disk.
 
 ```sh
 node bin/kosko-assist.mjs accounts                       # Windows / macOS: finds Evernote's folder itself
 node bin/kosko-assist.mjs accounts --data-dir <folder>   # anywhere else, e.g. WSL: /mnt/c/Users/<you>/AppData/Roaming/Evernote
+node bin/kosko-assist.mjs dry-run --out ./kosko-dry-run    # add --data-dir as above where needed
 node bin/kosko-assist.mjs probe-mcp --out ./probe-out
 npm test
 ```
