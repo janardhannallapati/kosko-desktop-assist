@@ -5,3 +5,6 @@
 export { readEnex } from './enex-reader.js';
 export { formatEnexDate } from './enex-date.js';
 export { fingerprintNote, assignFingerprints, FINGERPRINT_SCHEME } from '../fingerprint.js';
+// 0.2.1 (Kosko 467): the MIME sets, so the desktop tool decides an attachment exactly as /import does without
+// loading the editor schema. The same Set objects the root entry exports.
+export { STORABLE_MIME, NOTE_UPLOADABLE_MIME, CONVERTED_MIME } from '../leaves/note-mime.js';

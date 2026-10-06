@@ -69,6 +69,16 @@ describe('package boundary', () => {
     expect([...new Set(bare)].sort()).toEqual(['hash-wasm', 'sax']);
   });
 
+  it('./enex exports the MIME sets — the same Set objects as the root entry (0.2.1, Kosko 467)', async () => {
+    const enex = await import('../src/enex/index.js');
+    const root = await import('../src/index.js');
+    for (const name of ['STORABLE_MIME', 'NOTE_UPLOADABLE_MIME', 'CONVERTED_MIME']) {
+      expect(enex[name], name).toBeInstanceOf(Set);
+      expect(enex[name], name).toBe(root[name]);
+    }
+    expect(enex.NOTE_UPLOADABLE_MIME.has('image/png')).toBe(true);
+  });
+
   it('marks every Tiptap peer optional (needed only through the root entry)', () => {
     for (const name of Object.keys(pkg.peerDependencies)) expect(pkg.peerDependenciesMeta?.[name]?.optional, name).toBe(true);
   });

@@ -25,6 +25,10 @@ const result = convertEnml(enmlString, { schema: noteSchema(), window });
 const { identity, version } = await fingerprintNote({ created, title, content: enmlString, tags, resources });
 ```
 
+Without the editor schema, `@kosko-app/enex-core/enex` reads ENEX (`readEnex`), formats dates (`formatEnexDate`), keys
+notes (`fingerprintNote`, `assignFingerprints`) and, since 0.2.1, holds the MIME sets (`STORABLE_MIME`,
+`NOTE_UPLOADABLE_MIME`, `CONVERTED_MIME`). It needs no Tiptap peer.
+
 `window` is always an argument. In a browser, pass the page's own `window`; in Node, pass any DOM
 implementation's. The package never touches a global DOM, makes no network call and reads no environment.
 
