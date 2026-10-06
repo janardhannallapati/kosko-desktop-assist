@@ -125,3 +125,9 @@ test("missing and empty plain text give '' and are counted", () => {
   assert.equal(byId(notes, ID.nEmptyText).plainText, '');
   assert.equal(a.counts().emptyPlainText, 2);
 });
+
+// 467 (R1): Space names, from the optional Nodes_Workspace table, oldest first.
+test('spaces() reads every Space with its name, oldest first', () => {
+  assert.deepEqual(a.spaces().map((s) => [s.id, s.name]), [['ws-1', 'Personal'], ['ws-2', 'Personal']]);
+  assert.ok(a.spaces().every((s) => Number.isInteger(s.created)));
+});

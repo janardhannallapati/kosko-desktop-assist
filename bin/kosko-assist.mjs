@@ -10,6 +10,7 @@ const { runDryRun, pickAccount } = await import('../src/plan/dry-run.mjs');
 const { openAccount } = await import('../src/reader/reader.mjs');
 const { enexFiles, matchExports, renderMatch } = await import('../src/match/match.mjs');
 const { runConnect } = await import('../src/send/connect.mjs');
+const { runSendCommand } = await import('../src/send/send-command.mjs');
 const { redact } = await import('../src/send/token.mjs');
 
 const USAGE = `Usage:
@@ -18,6 +19,7 @@ const USAGE = `Usage:
   kosko-assist match <export.enex | folder>... [--out <folder>] [--data-dir <Evernote data folder>] [--account <user id>]
   kosko-assist probe-mcp --out <dir> [--port 8765] [--max-notes N] [--max-minutes 60] [--plan-wait-minutes 30]
   kosko-assist connect [--app <Kosko address>]
+  kosko-assist send --plan <dry-run folder> [--app <Kosko address>] [--data-dir <Evernote data folder>] [--account <user id>]
 
 probe-mcp signs you in to Evernote (read only), lists the MCP server's tools into <dir>/tools.json, waits for
 <dir>/plan.json, then measures how fast notes can be fetched. The report holds no note titles or bodies.
@@ -35,7 +37,11 @@ writes <folder>/kosko-match-report.json (counts and titles only). Exit code 0 wh
 
 connect checks an import token against Kosko (https://kosko.app, or --app http://127.0.0.1:<port> for a local one)
 and prints the storage used and left. It sends nothing else. Paste the token when asked, or set KOSKO_IMPORT_TOKEN;
-there is deliberately no --token option, because a flag is saved in your shell history.`;
+there is deliberately no --token option, because a flag is saved in your shell history.
+
+send moves the account the plan describes into Kosko: notebooks under their stacks, every tag, every note with its plain
+text, dates and Evernote id, and the attachments on this computer. It first counts Evernote again and stops if anything
+changed since the dry run. Ctrl-C stops it cleanly; running it again continues, and never creates anything twice.`;
 
 const [command, ...rest] = process.argv.slice(2);
 // 466 rule 1: a token on the command line lands in shell history and process listings. Refused before anything runs.
@@ -43,6 +49,16 @@ const [command, ...rest] = process.argv.slice(2);
 if (rest.some((a) => a === '--token' || a.startsWith('--token=') || /cvit_/i.test(a))) {
   console.error('There is no --token option: paste the import token when asked, or set KOSKO_IMPORT_TOKEN.');
   process.exit(2);
+}
+if (command === 'send') {
+  let values;
+  try {
+    ({ values } = parseArgs({ args: rest, options: { plan: { type: 'string' }, app: { type: 'string' }, 'data-dir': { type: 'string' }, account: { type: 'string' } } }));
+  } catch (e) {
+    console.error(`${redact(e.message)}\n\n${USAGE}`);
+    process.exit(2);
+  }
+  process.exit(await runSendCommand({ plan: values.plan, app: values.app, dataDir: values['data-dir'], account: values.account }));
 }
 if (command === 'connect') {
   let values;

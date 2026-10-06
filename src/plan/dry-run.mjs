@@ -85,6 +85,7 @@ export async function runDryRun({ dataDir, accountId, outDir, tmpRoot, open = op
     writer.value('source', { userId: account.userId, host: account.host, majorVersion: reader.meta.majorVersion,
       migrationVersion: reader.meta.migrationVersion });
     writer.value('counts', expected);
+    writer.value('spaces', reader.spaces()); // 467 (R1): additive; the plan's version stays 1
     tally.stacks = writer.array('stacks', reader.stacks());
     tally.notebooks = writer.array('notebooks', reader.notebooks());
     tally.tags = writer.array('tags', reader.tags());

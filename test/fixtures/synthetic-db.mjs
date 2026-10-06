@@ -73,6 +73,13 @@ export function buildSyntheticAccount({ root = mkdtempSync(join(tmpdir(), 'kosko
   nb(ID.nbLoose, 'Loose', null);
   nb(ID.nbShared, 'From a friend', null, 'Shared stack');
 
+  // 467: two Spaces with one name (the owner's account has two "Work"s); nSpace sits in the older one.
+  const ws = (id, label, created) => insert(db, 'Nodes_Workspace', { id, accessStatus: 'OWNER', description: '', workspaceType: 'OPEN',
+    created, updated: created, isSample: 0, notesCount: 0, notebooksCount: 0, internal_shareCountProfiles: '{}', label,
+    localChangeTimestamp: 0, version: 1 });
+  ws('ws-1', 'Personal', T0);
+  ws('ws-2', 'Personal', T0 + 5000);
+
   insert(db, 'Nodes_Tag', { id: ID.tagAlpha, label: 'alpha', localChangeTimestamp: 0, version: 1 });
   insert(db, 'Nodes_Tag', { id: ID.tagBeta, label: 'beta', parent_Tag_id: ID.tagAlpha, localChangeTimestamp: 0, version: 1 });
 

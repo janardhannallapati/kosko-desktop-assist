@@ -1,0 +1,179 @@
+// An in-memory Kosko import intake for 467's tests: the routes' shapes and the ledger rules the sender depends on,
+// as a `fetch` the client is given. It holds state across runs, so a second run meets the first run's ledger.
+// Mirrors (Kosko docs): 380 notebooks reuse by (parent, folded name) · 464 tags by slug · 463 note-ids GUID-first
+// with `clash` · 432 notes/batch per-index results, a note found by GUID or fp1 is `skipped` · 381/432 attachments,
+// a stored key answers `upload: null` · 423/465 receipt (the desktop block's sum rule) · 382 job lifecycle.
+import { createHash, randomUUID } from 'node:crypto';
+
+const fold = (s) => String(s).trim().toLowerCase();
+const uuidOf = (text) => {
+  const h = createHash('sha256').update(text).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-8${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
+};
+const json = (status, body, headers = {}) => new Response(body === null ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
+
+export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
+  const ownMedia = (r) => {
+    // Kosko 379: a media path is a placeholder or THIS note's own key, or the whole record is refused.
+    let ok = true;
+    (function walk(n) {
+      if (!n || typeof n !== 'object') return;
+      const p = n.attrs?.path;
+      if ((n.type === 'noteImage' || n.type === 'noteAttachment') && !(/^enex-resource:[0-9a-f]{32}$/.test(p) || String(p).startsWith(`notes/${r.id}/`))) ok = false;
+      (n.content ?? []).forEach(walk);
+    })(r.content);
+    return ok;
+  };
+  const state = {
+    jobs: [], notebooks: new Map(), tags: new Map(), ledgerByGuid: new Map(), ledgerByFp: new Map(),
+    notes: new Map(), stored: new Map(), refusals: [], requests: [], uploads: [],
+    // test hooks: per-call overrides
+    noteErrors: new Map(), // guid -> [code, …] consumed one per attempt
+    badAnswers: new Set(), // guids whose next notes/batch result is neither an outcome nor an error
+    expireUploads: 0, // the next N store PUTs answer 403 (an expired presigned URL)
+    mintErrors: [], // codes answered, one per item, by the next attachments/batch items
+    failNextNotesBatch: 0,
+    tagCalls: [], noteIdCalls: []
+  };
+
+  function job(id) { return state.jobs.find((j) => j.id === id); }
+  function openJob(id) { const j = job(id); return j && j.status === 'running' ? j : null; }
+
+  const routes = {
+    'POST /api/import/jobs': (body) => {
+      for (const j of state.jobs) if (j.status === 'running') { j.status = 'cancelled'; j.summary = { ...(j.summary ?? {}), continued: 1 }; }
+      const j = { id: randomUUID(), status: 'running', source: body?.source ?? 'enex', summary: body?.expected ? { expected: body.expected } : {}, receipt: null, created: state.jobs.length };
+      state.jobs.push(j);
+      return json(201, { id: j.id, status: 'running' });
+    },
+    'GET /api/import/jobs': () => {
+      const j = state.jobs.at(-1);
+      return json(200, { job: j && j.status !== 'complete' ? { id: j.id, source: j.source, status: j.status } : null });
+    },
+    'DELETE /api/import/jobs': () => json(204, null),
+    'PATCH /api/import/jobs/[id]': (body, id) => {
+      const j = openJob(id);
+      if (!j) return json(409, { code: 'job_closed' });
+      if (body.receipt !== undefined && !receiptOk(body.receipt)) return json(400, { code: 'invalid' });
+      Object.assign(j, { status: body.status, summary: body.summary, receipt: body.receipt ?? null });
+      return json(200, { id: j.id, status: j.status });
+    },
+    'GET /api/import/allowance': () => json(200, { byteLimit: 10 * 1024 ** 3, bytesUsed: 0, maxFileBytes }),
+    'POST /api/import/notebooks': (body) => {
+      if (!openJob(body.job_id)) return json(409, { code: 'job_closed' });
+      const ids = {};
+      let created = 0;
+      let reused = 0;
+      const pending = [...body.notebooks];
+      for (let guard = 0; pending.length && guard < 10_000; guard++) {
+        const e = pending.shift();
+        if (e.parent_key && !ids[e.parent_key]) {
+          if (!body.notebooks.some((x) => x.key === e.parent_key)) return json(400, { code: 'invalid' });
+          pending.push(e); continue;
+        }
+        const parent = e.parent_key ? ids[e.parent_key] : null;
+        const k = `${parent}|${fold(e.name)}`;
+        if (state.notebooks.has(k)) { ids[e.key] = state.notebooks.get(k); reused++; } else { ids[e.key] = randomUUID(); state.notebooks.set(k, ids[e.key]); created++; }
+      }
+      return json(200, { ids, created, reused });
+    },
+    'POST /api/import/tags': (body) => {
+      if (!openJob(body.job_id)) return json(409, { code: 'job_closed' });
+      if (!Array.isArray(body.names) || body.names.length < 1 || body.names.length > 1000) return json(400, { code: 'invalid' });
+      state.tagCalls.push(body.names.length);
+      let created = 0; let reused = 0; let dropped = 0;
+      for (const n of body.names) {
+        const slug = fold(n).replace(/^#/, '');
+        if (!slug) { dropped++; continue; }
+        if (state.tags.has(slug)) reused++; else { state.tags.set(slug, n); created++; }
+      }
+      return json(200, { created, reused, shortened: 0, dropped });
+    },
+    'POST /api/import/note-ids': (body) => {
+      const { fingerprints, external_ids: guids } = body;
+      if (!Array.isArray(fingerprints) || fingerprints.length > 1000 || (guids && guids.length !== fingerprints.length)) return json(400, { code: 'invalid' });
+      state.noteIdCalls.push(fingerprints.length);
+      const ids = {};
+      fingerprints.forEach((fp, i) => {
+        const g = guids?.[i] ?? null;
+        const byGuid = g ? state.ledgerByGuid.get(g) : null;
+        if (byGuid) { ids[fp] = { id: byGuid.nodeId, state: 'here' }; return; }
+        const byFp = state.ledgerByFp.get(fp);
+        if (byFp && g && byFp.guid && byFp.guid !== g) { ids[fp] = { id: null, state: 'clash' }; return; }
+        if (byFp) { ids[fp] = { id: byFp.nodeId, state: 'here' }; return; }
+        ids[fp] = { id: uuidOf(`fp:${fp}`), state: 'new' };
+      });
+      return json(200, { ids });
+    },
+    'POST /api/import/attachments/batch': (body) => {
+      if (!openJob(body.job_id)) return json(409, { code: 'job_closed' });
+      if (body.items.length > 100) return json(400, { code: 'invalid' });
+      const results = body.items.map((it, index) => {
+        const forced = state.mintErrors.shift();
+        if (forced) return { index, error: { code: forced } };
+        const ext = it.content_type === 'image/png' ? 'png' : it.content_type === 'application/pdf' ? 'pdf' : 'bin';
+        const path = `notes/${it.note_id}/${it.folder}/${it.md5}.${ext}`;
+        if (state.stored.has(path)) return { index, path, upload: null };
+        return { index, path, upload: { url: `https://store.test/${path}`, method: 'PUT', headers: { 'content-type': it.content_type, 'content-length': String(it.size) }, expiresIn: 3600 } };
+      });
+      return json(200, { results });
+    },
+    'POST /api/import/notes/batch': (body) => {
+      if (!openJob(body.job_id)) return json(409, { code: 'job_closed' });
+      if (state.failNextNotesBatch > 0) { state.failNextNotesBatch--; return json(503, { code: 'unavailable' }); }
+      const results = body.notes.map((r, index) => {
+        if (state.badAnswers.delete(r.external_id)) return { index, outcome: 'bogus' };
+        const queued = state.noteErrors.get(r.external_id);
+        if (queued?.length) return { index, error: { code: queued.shift() } };
+        if (r.content?.type !== 'doc' || !ownMedia(r) || !/^fp1:[0-9a-f]{64}$/.test(r.fingerprint) || !/^[0-9a-f]{64}$/.test(r.version_hash)) return { index, error: { code: 'invalid' } };
+        const known = (r.external_id && state.ledgerByGuid.get(r.external_id)) || state.ledgerByFp.get(r.fingerprint);
+        if (known) return { index, outcome: 'skipped', node_id: known.nodeId, reason: null };
+        if (state.notes.has(r.id)) return { index, error: { code: 'id_taken' } };
+        const entry = { nodeId: r.id, guid: r.external_id ?? null };
+        state.ledgerByFp.set(r.fingerprint, entry);
+        if (r.external_id) state.ledgerByGuid.set(r.external_id, entry);
+        state.notes.set(r.id, r);
+        return { index, outcome: 'created', node_id: r.id, reason: null };
+      });
+      return json(200, { results });
+    },
+    'POST /api/import/refusals': (body) => { state.refusals.push(body); return json(200, { outcome: 'not_imported' }); }
+  };
+
+  const fetch = async (url, init = {}) => {
+    const u = new URL(String(url));
+    if (u.hostname === 'store.test') {
+      const bytes = new Uint8Array(await new Response(init.body).arrayBuffer());
+      const path = u.pathname.slice(1);
+      state.uploads.push({ path, bytes: bytes.length, headers: init.headers });
+      if (init.headers?.authorization) return new Response(null, { status: 400 });
+      if (state.expireUploads > 0) { state.expireUploads--; return new Response(null, { status: 403 }); }
+      state.stored.set(path, bytes.length);
+      return new Response(null, { status: 200 });
+    }
+    const m = /^\/api\/import\/jobs\/([0-9a-f-]{36})(\/receipt)?$/.exec(u.pathname);
+    const route = m ? `/api/import/jobs/[id]${m[2] ?? ''}` : u.pathname;
+    const key = `${init.method ?? 'GET'} ${route}`;
+    state.requests.push(key);
+    const handler = routes[key];
+    if (!handler) return json(404, { code: 'not_found' });
+    if (init.headers?.authorization !== 'Bearer ' + fake.token) return json(401, { error: 'no' });
+    return handler(init.body ? JSON.parse(init.body) : undefined, m?.[1]);
+  };
+
+  const fake = { fetch, state, token: null, job };
+  return fake;
+}
+
+// Kosko 423 + 465: the receipt's own keys, and the desktop block's keys and sum rule.
+function receiptOk(r) {
+  const keys = ['v', 'notes', 'notesMore', 'files', 'filesMore', 'links', 'linksMore', 'cannotCarry', 'desktop'];
+  if (!r || r.v !== 1 || !Object.keys(r).every((k) => keys.includes(k))) return false;
+  if (!r.desktop) return true;
+  const d = r.desktop;
+  const counts = ['notebooks', 'stacks', 'spaceNotebooks', 'tags', 'tagsDropped', 'noteTags', 'trashedNotes', 'missingFiles', 'missingMore'];
+  if (Object.keys(d).length !== counts.length + 1 || !counts.every((k) => Number.isInteger(d[k]) && d[k] >= 0)) return false;
+  if (!Array.isArray(d.missing) || d.missing.length > 1000) return false;
+  if (!d.missing.every((m) => Object.keys(m).length === 2 && typeof m.note === 'string' && typeof m.name === 'string')) return false;
+  return d.missing.length + d.missingMore === d.missingFiles;
+}

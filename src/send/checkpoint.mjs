@@ -11,7 +11,11 @@ export const CHECKPOINT_NAME = 'kosko-send-checkpoint.json';
 const FORMAT = 'kosko-send-checkpoint';
 const VERSION = 1;
 const KEYS = ['format', 'version', 'plan', 'app', 'jobId', 'notebooks', 'tags', 'notes', 'attachments', 'updatedAt'];
-const OUTCOMES = new Set(['created', 'skipped', 'not_imported']);
+// A settled note: its outcome, and (467) the reason a resumed run's receipt must still name — `skipped:changed_in_evernote`,
+// `not_imported:id_clash`. The reason is a Kosko reason code (lib/enex/receipt-reasons.js shape).
+const OUTCOME_RE = /^(created|skipped|not_imported)(:[a-z_]{1,40})?$/;
+// 467 review H2: an attachment's receipt bucket, so a resumed run counts it as the run that settled it did.
+const BUCKETS = new Set(['stored', 'placeholder', 'over_cap', 'type_not_stored', 'unreadable', 'not_imported_with_note']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // An Evernote id or GUID, or "stack:<name>" — a name is the person's own text in any script (466 review H2), so any
 // characters but control characters, up to 400; never "__proto__", which JSON.parse makes an own key.
@@ -42,7 +46,7 @@ function isCheckpoint(c) {
     && typeof c.app === 'string' && (c.jobId === null || UUID_RE.test(c.jobId))
     && mapOf(c.notebooks, (v) => typeof v === 'string' && UUID_RE.test(v))
     && isPlain(c.tags) && sameKeys(c.tags, ['done']) && typeof c.tags.done === 'boolean'
-    && mapOf(c.notes, (v) => OUTCOMES.has(v)) && mapOf(c.attachments, (v) => v === true)
+    && mapOf(c.notes, (v) => typeof v === 'string' && OUTCOME_RE.test(v)) && mapOf(c.attachments, (v) => v === true || BUCKETS.has(v))
     && (c.updatedAt === null || typeof c.updatedAt === 'string');
 }
 

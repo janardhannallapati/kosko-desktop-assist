@@ -109,3 +109,14 @@ test('stack keys in any script round-trip; a control character or __proto__ does
   writeFileSync(checkpointPath(plan), JSON.stringify({ ...full(fp), notebooks: JSON.parse('{"__proto__":"' + NB + '"}') }));
   assert.equal(loadCheckpoint(plan, { plan: fp, app: APP }).checkpoint, null);
 });
+
+// 467: a settled note keeps the reason its receipt names, so a resumed run's receipt still names it.
+test('a note outcome may carry its reason; anything else is not a checkpoint', async () => {
+  const { plan } = setup();
+  const fp = await planFingerprint(plan);
+  saveCheckpoint(plan, { ...full(fp), notes: { a: 'skipped:changed_in_evernote', b: 'not_imported:id_clash', c: 'created' } });
+  assert.equal(loadCheckpoint(plan, { plan: fp, app: APP }).checkpoint.notes.b, 'not_imported:id_clash');
+  for (const bad of ['skipped:', 'created:X', 'not_imported:a b', 'deleted:x']) {
+    assert.throws(() => saveCheckpoint(plan, { ...full(fp), notes: { a: bad } }), /not a checkpoint/, bad);
+  }
+});

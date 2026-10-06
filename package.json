@@ -17,6 +17,19 @@
   },
   "license": "Apache-2.0",
   "dependencies": {
-    "@kosko-app/enex-core": "0.2.0"
+    "@kosko-app/enex-core": "0.2.1"
+  },
+  "devDependencies": {
+    "@tiptap/core": "3.30.5",
+    "@tiptap/extension-highlight": "3.30.5",
+    "@tiptap/extension-image": "3.30.5",
+    "@tiptap/extension-list": "3.30.5",
+    "@tiptap/extension-subscript": "3.30.5",
+    "@tiptap/extension-superscript": "3.30.5",
+    "@tiptap/extension-table": "3.30.5",
+    "@tiptap/extension-text-align": "3.30.5",
+    "@tiptap/extension-text-style": "3.30.5",
+    "@tiptap/pm": "3.30.5",
+    "@tiptap/starter-kit": "3.30.5"
   }
 }

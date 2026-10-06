@@ -136,3 +136,28 @@ CREATE TABLE "AttachmentRecognition"(
 CREATE TABLE Offline_Search_Note_Content(
 `id` TEXT PRIMARY KEY,
 `content` TEXT NOT NULL);
+
+-- 467 (R1, 2026-10-06): the Space names. Copied verbatim from sqlite_master like the tables above; OPTIONAL for the
+-- reader (an account with no Spaces may not have it), so it is not in REQUIRED_SCHEMA.
+CREATE TABLE Nodes_Workspace(
+`id` TEXT PRIMARY KEY,
+`accessStatus` TEXT NOT NULL,
+`description` TEXT NOT NULL,
+`workspaceType` TEXT NOT NULL,
+`created` INTEGER NOT NULL,
+`updated` INTEGER NOT NULL,
+`defaultRole` TEXT,
+`isSample` BOOLEAN NOT NULL,
+`notesCount` REAL NOT NULL,
+`notebooksCount` REAL NOT NULL,
+`internal_shareCountProfiles` TEXT NOT NULL,
+`_input_edges` TEXT,
+`label` TEXT NOT NULL,
+`localChangeTimestamp` REAL NOT NULL,
+`_output_edges` TEXT,
+`manager_Profile_id` TEXT,
+`owner` REAL,
+`shardId` TEXT,
+`_undefinedNodeFields` TEXT,
+`version` REAL NOT NULL,
+`__unknownFields` TEXT);

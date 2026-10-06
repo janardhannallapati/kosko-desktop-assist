@@ -7,7 +7,7 @@ Moves a whole Evernote account into [Kosko](https://kosko.app) from your own com
   Evernote once (read-only access).
 - Before anything is sent, it writes the exact plan to disk, so you can inspect it.
 
-**Status: early development.** Nothing is sent to Kosko yet. Today it contains:
+**Status: early development.** Today it contains:
 
 - `accounts`: lists the Evernote accounts on this computer (user id, database size, last written). It reads file
   names and sizes only.
@@ -29,6 +29,11 @@ Moves a whole Evernote account into [Kosko](https://kosko.app) from your own com
   token when asked, or set `KOSKO_IMPORT_TOKEN`; there is no `--token` option, because a flag is saved in your shell
   history. The token is never written to disk or printed. `src/send/` holds the client the send step uses: it waits
   when Kosko is busy and resumes a stopped run from a checkpoint file next to the plan.
+- `send`: moves the account the dry run planned into Kosko — notebooks under their stacks, notes with no notebook in a
+  notebook named after their Space, every tag (unused ones too; a nested tag as `parent/child`), every note with its
+  plain text, dates and Evernote id, and the attachments that are on this computer. It counts Evernote again first and
+  stops if anything changed since the dry run. Ctrl-C stops it; running it again continues the same import, and a
+  second run creates nothing. The receipt in Kosko names everything that did not come across.
 
 ```sh
 node bin/kosko-assist.mjs accounts                       # Windows / macOS: finds Evernote's folder itself
@@ -37,10 +42,12 @@ node bin/kosko-assist.mjs dry-run --out ./kosko-dry-run    # add --data-dir as a
 node bin/kosko-assist.mjs match ./my-exports --out ./kosko-match   # a folder of .enex files, or the files themselves
 node bin/kosko-assist.mjs probe-mcp --out ./probe-out
 node bin/kosko-assist.mjs connect                          # or --app http://127.0.0.1:3003 for a local Kosko
+node bin/kosko-assist.mjs send --plan ./kosko-dry-run      # add --data-dir / --app as above where needed
 npm test
 ```
 
-Requires Node 22.16 or later (for `node:sqlite`'s backup API). No dependencies.
+Requires Node 22.16 or later (for `node:sqlite`'s backup API). One dependency, `@kosko-app/enex-core` (Tiptap is a
+development dependency, for the tests that prove each note fits the schema).
 
 Licensed under the Apache License, Version 2.0 (see `LICENSE`).
 

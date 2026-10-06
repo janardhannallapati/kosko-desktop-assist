@@ -85,6 +85,15 @@ function makeReader(db, snap, versions, resourceCacheDir) {
         .map((r) => ({ id: r.id, name: r.label, stack: r.stack, workspaceId: r.ws, created: r.created, updated: r.updated }));
     },
 
+    // 467 (R1): Spaces, by name. Nodes_Workspace is optional (not in REQUIRED_SCHEMA): an account that never had a
+    // Space may not have the table, and then there are none.
+    spaces() {
+      const has = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'Nodes_Workspace'").get();
+      if (!has) return [];
+      return all('SELECT id, label, created FROM Nodes_Workspace ORDER BY created, id')
+        .map((r) => ({ id: r.id, name: r.label, created: r.created }));
+    },
+
     stacks() {
       return all(`SELECT coalesce(personal_Stack_id, recipient_Stack_id) name, count(*) n FROM Nodes_Notebook
                   WHERE coalesce(personal_Stack_id, recipient_Stack_id) IS NOT NULL GROUP BY 1 ORDER BY 1`)

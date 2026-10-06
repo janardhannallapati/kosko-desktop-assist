@@ -47,6 +47,8 @@ test('the synthetic account passes the check and the plan holds every section', 
   assert.equal(plan.notebooks.length, 4);
   assert.equal(plan.stacks.length, 2);
   assert.equal(plan.tags.length, 2);
+  // 467 (R1): the Space names, so notes with no notebook can be filed under their Space's name.
+  assert.deepEqual(plan.spaces.map((s) => s.name), ['Personal', 'Personal']);
   assert.deepEqual(plan.check, { passed: true, differences: [] });
   assert.equal(plan.notes.find((n) => n.id === ID.nActive).plainText, 'hello world');
 });
