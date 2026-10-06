@@ -9,12 +9,15 @@ const { findDataDirs, listAccounts } = await import('../src/reader/locate.mjs');
 const { runDryRun, pickAccount } = await import('../src/plan/dry-run.mjs');
 const { openAccount } = await import('../src/reader/reader.mjs');
 const { enexFiles, matchExports, renderMatch } = await import('../src/match/match.mjs');
+const { runConnect } = await import('../src/send/connect.mjs');
+const { redact } = await import('../src/send/token.mjs');
 
 const USAGE = `Usage:
   kosko-assist accounts [--data-dir <Evernote data folder>]
   kosko-assist dry-run --out <folder> [--data-dir <Evernote data folder>] [--account <user id>]
   kosko-assist match <export.enex | folder>... [--out <folder>] [--data-dir <Evernote data folder>] [--account <user id>]
   kosko-assist probe-mcp --out <dir> [--port 8765] [--max-notes N] [--max-minutes 60] [--plan-wait-minutes 30]
+  kosko-assist connect [--app <Kosko address>]
 
 probe-mcp signs you in to Evernote (read only), lists the MCP server's tools into <dir>/tools.json, waits for
 <dir>/plan.json, then measures how fast notes can be fetched. The report holds no note titles or bodies.
@@ -28,9 +31,29 @@ count of the database and stops with exit code 1 on any difference. Nothing is s
 
 match reads Evernote exports (.enex) and finds, for each note, the local note with the same fp1 key (its creation
 time). It prints how many matched exactly one, and names by title every note that did not. With --out it also
-writes <folder>/kosko-match-report.json (counts and titles only). Exit code 0 when at least 99% matched.`;
+writes <folder>/kosko-match-report.json (counts and titles only). Exit code 0 when at least 99% matched.
+
+connect checks an import token against Kosko (https://kosko.app, or --app http://127.0.0.1:<port> for a local one)
+and prints the storage used and left. It sends nothing else. Paste the token when asked, or set KOSKO_IMPORT_TOKEN;
+there is deliberately no --token option, because a flag is saved in your shell history.`;
 
 const [command, ...rest] = process.argv.slice(2);
+// 466 rule 1: a token on the command line lands in shell history and process listings. Refused before anything runs.
+// 466 review M8: a token anywhere on the line (a bare word, after a mistyped flag) is refused the same way, unechoed.
+if (rest.some((a) => a === '--token' || a.startsWith('--token=') || /cvit_/i.test(a))) {
+  console.error('There is no --token option: paste the import token when asked, or set KOSKO_IMPORT_TOKEN.');
+  process.exit(2);
+}
+if (command === 'connect') {
+  let values;
+  try {
+    ({ values } = parseArgs({ args: rest, options: { app: { type: 'string' } } }));
+  } catch (e) {
+    console.error(`${redact(e.message)}\n\n${USAGE}`);
+    process.exit(2);
+  }
+  process.exit(await runConnect({ app: values.app }));
+}
 if (command === 'accounts') {
   const { values } = parseArgs({ args: rest, options: { 'data-dir': { type: 'string' } } });
   const dirs = findDataDirs({ dataDir: values['data-dir'] });

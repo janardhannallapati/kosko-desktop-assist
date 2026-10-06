@@ -24,6 +24,11 @@ Moves a whole Evernote account into [Kosko](https://kosko.app) from your own com
   that did not match. Nothing is sent anywhere.
 - `probe-mcp`: a measurement tool that checks how fast Evernote's MCP server hands out notes. It never stores
   note titles or bodies, and it never writes your tokens to disk.
+- `connect`: checks a Kosko import token (made on Kosko's Import page; it starts with `cvit_`, lasts 24 hours and can
+  call only the import routes) and prints the storage you have used and have left. It sends nothing else. Paste the
+  token when asked, or set `KOSKO_IMPORT_TOKEN`; there is no `--token` option, because a flag is saved in your shell
+  history. The token is never written to disk or printed. `src/send/` holds the client the send step uses: it waits
+  when Kosko is busy and resumes a stopped run from a checkpoint file next to the plan.
 
 ```sh
 node bin/kosko-assist.mjs accounts                       # Windows / macOS: finds Evernote's folder itself
@@ -31,6 +36,7 @@ node bin/kosko-assist.mjs accounts --data-dir <folder>   # anywhere else, e.g. W
 node bin/kosko-assist.mjs dry-run --out ./kosko-dry-run    # add --data-dir as above where needed
 node bin/kosko-assist.mjs match ./my-exports --out ./kosko-match   # a folder of .enex files, or the files themselves
 node bin/kosko-assist.mjs probe-mcp --out ./probe-out
+node bin/kosko-assist.mjs connect                          # or --app http://127.0.0.1:3003 for a local Kosko
 npm test
 ```
 

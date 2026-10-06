@@ -1,0 +1,86 @@
+// 466 rule 9 — a stopped run resumes from kosko-send-checkpoint.json beside the plan. It can be lost, never wrong:
+// Kosko's ledger is what makes a resend safe (a note already there is answered `skipped`), so the checkpoint only saves
+// time. It is read back only when it is for THIS plan (sha-256 and size) and THIS Kosko, and every key is one this file
+// names; anything else is ignored with a reason, and the run starts over. It holds ids and GUIDs only — never the
+// token, a title or note text. Written to a temp file and renamed, so a crash mid-write leaves the previous one whole.
+import { createHash } from 'node:crypto';
+import { createReadStream, readFileSync, renameSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+export const CHECKPOINT_NAME = 'kosko-send-checkpoint.json';
+const FORMAT = 'kosko-send-checkpoint';
+const VERSION = 1;
+const KEYS = ['format', 'version', 'plan', 'app', 'jobId', 'notebooks', 'tags', 'notes', 'attachments', 'updatedAt'];
+const OUTCOMES = new Set(['created', 'skipped', 'not_imported']);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// An Evernote id or GUID, or "stack:<name>" — a name is the person's own text in any script (466 review H2), so any
+// characters but control characters, up to 400; never "__proto__", which JSON.parse makes an own key.
+const KEY_RE = /^[^\p{Cc}]{1,400}$/u;
+const isKey = (k) => KEY_RE.test(k) && k !== '__proto__';
+
+export const checkpointPath = (planPath) => join(dirname(planPath), CHECKPOINT_NAME);
+
+export function planFingerprint(planPath) {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256');
+    let bytes = 0;
+    createReadStream(planPath).on('data', (c) => { hash.update(c); bytes += c.length; })
+      .on('error', reject).on('end', () => resolve({ sha256: hash.digest('hex'), bytes }));
+  });
+}
+
+export const emptyCheckpoint = ({ plan, app, jobId = null }) =>
+  ({ format: FORMAT, version: VERSION, plan, app, jobId, notebooks: {}, tags: { done: false }, notes: {}, attachments: {}, updatedAt: null });
+
+const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const sameKeys = (o, keys) => Object.keys(o).length === keys.length && keys.every((k) => Object.hasOwn(o, k));
+const mapOf = (o, valueOk) => isPlain(o) && Object.entries(o).every(([k, v]) => isKey(k) && valueOk(v));
+
+function isCheckpoint(c) {
+  return isPlain(c) && sameKeys(c, KEYS) && c.format === FORMAT && Number.isInteger(c.version)
+    && isPlain(c.plan) && sameKeys(c.plan, ['sha256', 'bytes']) && /^[0-9a-f]{64}$/.test(c.plan.sha256) && Number.isInteger(c.plan.bytes)
+    && typeof c.app === 'string' && (c.jobId === null || UUID_RE.test(c.jobId))
+    && mapOf(c.notebooks, (v) => typeof v === 'string' && UUID_RE.test(v))
+    && isPlain(c.tags) && sameKeys(c.tags, ['done']) && typeof c.tags.done === 'boolean'
+    && mapOf(c.notes, (v) => OUTCOMES.has(v)) && mapOf(c.attachments, (v) => v === true)
+    && (c.updatedAt === null || typeof c.updatedAt === 'string');
+}
+
+/** { checkpoint, reason }: a usable checkpoint and reason null, or checkpoint null and why it was not used. */
+export function loadCheckpoint(planPath, { plan, app }) {
+  const path = checkpointPath(planPath);
+  if (!existsSync(path)) return { checkpoint: null, reason: null };
+  let c;
+  try { c = JSON.parse(readFileSync(path, 'utf8')); } catch { return { checkpoint: null, reason: 'The saved progress is not a checkpoint this tool wrote; starting over.' }; }
+  if (isPlain(c) && c.format === FORMAT && c.version !== VERSION) return { checkpoint: null, reason: `The saved progress is from another version (${c.version}); starting over.` };
+  if (!isCheckpoint(c)) return { checkpoint: null, reason: 'The saved progress is not a checkpoint this tool wrote; starting over.' };
+  if (c.plan.sha256 !== plan.sha256 || c.plan.bytes !== plan.bytes) return { checkpoint: null, reason: 'The saved progress is for another plan; starting over.' };
+  if (c.app !== app) return { checkpoint: null, reason: `The saved progress is for another Kosko (${c.app}); starting over.` };
+  return { checkpoint: c, reason: null };
+}
+
+// renameSync over a file another program holds open fails on Windows (EPERM/EBUSY): an editor, or antivirus scanning
+// it. Retried briefly, as the dry run does for the plan (src/plan/dry-run.mjs).
+function renameWithRetry(rename, from, to, tries = 5) {
+  for (let i = 1; ; i++) {
+    try { return rename(from, to); } catch (e) {
+      if (i >= tries || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100 * i);
+    }
+  }
+}
+
+export function saveCheckpoint(planPath, checkpoint, { rename = renameSync, now = () => new Date() } = {}) {
+  const c = { ...checkpoint, updatedAt: now().toISOString() };
+  if (!isCheckpoint(c)) throw new Error('Refusing to save: that is not a checkpoint this tool can read back.');
+  const path = checkpointPath(planPath);
+  const partial = `${path}.partial`;
+  try {
+    writeFileSync(partial, JSON.stringify(c), { mode: 0o600 });
+    renameWithRetry(rename, partial, path);
+  } catch (e) {
+    rmSync(partial, { force: true });
+    throw e;
+  }
+  return c;
+}
