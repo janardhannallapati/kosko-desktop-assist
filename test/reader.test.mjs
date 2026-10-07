@@ -40,7 +40,7 @@ test('trashed note, its tags, attachments and OCR are not yielded but counted', 
   const c = a.counts();
   assert.equal(c.trashedNotes, 1);
   assert.equal(c.noteTagsAll, 3);
-  assert.equal(c.ocrAll, 4);
+  assert.equal(c.ocrAll, 7);
 });
 
 test('what the iterators yield equals counts()', () => {

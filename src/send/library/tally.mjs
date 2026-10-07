@@ -47,7 +47,7 @@ export function createTally() {
     counts: () => ({ notes: { ...notes }, settled: settled.size }),
 
     /** { summary, receipt } for PATCH /api/import/jobs/{id}. `structure`: what the notebook and tag steps accounted for. */
-    build({ expected, structure, trashedNotes }) {
+    build({ expected, structure, trashedNotes, ocr }) {
       const summary = { notes: { ...notes }, reasons: { ...reasons }, skip_reasons: { ...skipReasons }, attachments: { ...attachments }, expected };
       const ordered = [...named].sort(NOT_IMPORTED_FIRST);
       const receipt = {
@@ -60,7 +60,10 @@ export function createTally() {
           notebooks: structure.notebooks + structure.stacks + structure.spaceNotebooks, grouped: 0, parents: 0, links: 0, linked: 0 },
         desktop: { notebooks: structure.notebooks, stacks: structure.stacks, spaceNotebooks: structure.spaceNotebooks,
           tags: structure.tags, tagsDropped: structure.tagsDropped, noteTags, trashedNotes,
-          missingFiles: missing.length, missing: missing.slice(0, LIMITS.files), missingMore: 0 }
+          missingFiles: missing.length, missing: missing.slice(0, LIMITS.files), missingMore: 0,
+          // 501/504: all five image-text counts, or none (a caller that sent no OCR)
+          ...(ocr ? { ocrWords: ocr.ocrWords, ocrEmpty: ocr.ocrEmpty, ocrUnreadable: ocr.ocrUnreadable,
+            ocrNotSent: ocr.ocrNotSent, ocrRefused: ocr.ocrRefused } : {}) }
       };
       // Over the byte budget: halve the longer list until it fits (Kosko's buildReceipt does the same).
       while (byteSize(receipt) > LIMITS.bytes && (receipt.notes.length || receipt.desktop.missing.length)) {

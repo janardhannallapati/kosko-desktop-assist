@@ -1,4 +1,4 @@
-// 466 rules 3-5 and 8 — the tool's ONE way to talk to Kosko: the 12 routes an import token may call (Kosko's
+// 466 rules 3-5 and 8 — the tool's ONE way to talk to Kosko: the 13 routes an import token may call (Kosko's
 // lib/bearer-scope.js IMPORT_BEARER_ROUTES), on one checked origin, plus PUTs to presigned upload URLs.
 //
 // Every request: `Authorization: Bearer <token>`, `cache: no-store`, `redirect: 'error'` (a token never follows a
@@ -25,7 +25,8 @@ export const IMPORT_ROUTES = Object.freeze([
   Object.freeze({ method: 'POST', route: '/api/import/notes/batch' }),
   Object.freeze({ method: 'POST', route: '/api/import/attachments/batch' }),
   Object.freeze({ method: 'POST', route: '/api/import/refusals' }),
-  Object.freeze({ method: 'POST', route: '/api/import/tags' })
+  Object.freeze({ method: 'POST', route: '/api/import/tags' }),
+  Object.freeze({ method: 'POST', route: '/api/import/ocr/batch' }) // 501/504: Evernote's image text
 ]);
 
 // https, or plain http to 127.0.0.1 only (a local Kosko, or the local object store); never `localhost`, which from
@@ -119,6 +120,7 @@ export function createImportApi({ app, token, fetch: fetchImpl = globalThis.fetc
     attachmentsBatch: (body) => request('POST', '/api/import/attachments/batch', body),
     refusal: (body) => request('POST', '/api/import/refusals', body),
     tags: (body) => request('POST', '/api/import/tags', body),
+    ocrBatch: (body) => request('POST', '/api/import/ocr/batch', body),
 
     /** PUT one file to a presigned URL from attachments/batch: exactly the signed headers, no Authorization. */
     async upload(presigned, bytes, { timeoutMs: uploadMs = TIMEOUT_MS + Math.ceil((bytes?.byteLength ?? 0) / 1e6) * 1000 } = {}) {

@@ -9,6 +9,7 @@ const MINT_MAX = 100; // attachments/batch (432)
 const UPLOAD_LANES = 4;
 const MEDIA_RESENDS = 10;
 const GUID_RE = /^[A-Za-z0-9_-]{1,64}$/; // Kosko 463's external_id check
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // A note's own refusal → the receipt reason (Kosko run-import.js NOTE_REASON).
 const NOTE_REASON = { invalid: 'parse_error', note_too_large: 'note_too_large', batch_too_large: 'note_too_large', quota_exceeded: 'quota_exceeded' };
 const OUTCOMES = new Set(['created', 'skipped']);
@@ -104,6 +105,8 @@ export function createNoteSender({ api, sender, lanes, jobId, resourceCacheDir, 
       // Kosko holds this note's creation second for a DIFFERENT Evernote note: sending it would be refused (463 rule 3).
       if (st?.state === 'clash') { settle(x, 'not_imported', 'id_clash'); continue; }
       Object.assign(x, { id: st?.state === 'new' && st.id ? st.id : randomUUID(), skipBound: Boolean(st && st.state !== 'new'),
+        // 504: the live Kosko note a `skipped` answer means (note-ids `here`); trash, deleted or new have none.
+        hereId: st?.state === 'here' && UUID_RE.test(String(st.id)) ? String(st.id) : null,
         paths: null, refusedTypes: new Set(), idRetried: false, mediaResends: 0, retries: 0, quota: false });
       queue.push(x);
     }
@@ -118,7 +121,11 @@ export function createNoteSender({ api, sender, lanes, jobId, resourceCacheDir, 
       for (const [index, x] of queue.entries()) {
         // A note with no answer, or an answer that is not one, is sent again (467 review M1/M2), never settled blind.
         const r = answered.get(index) ?? { error: { code: 'retry' } };
-        if (!r.error && OUTCOMES.has(r.outcome)) { settle(x, r.outcome, REASON_RE.test(String(r.reason)) ? r.reason : null); continue; }
+        if (!r.error && OUTCOMES.has(r.outcome)) {
+          x.koskoId = r.outcome === 'created' ? x.id : x.hereId; // 504: the note its image text is sent to
+          settle(x, r.outcome, REASON_RE.test(String(r.reason)) ? r.reason : null);
+          continue;
+        }
         const code = r.error?.code ?? 'retry';
         if (code === 'id_taken' && !x.idRetried) { Object.assign(x, { idRetried: true, id: randomUUID(), paths: null }); again.push(x); continue; }
         // Twice: a race and a permanent clash look the same (463 review M3); report it, do not loop.

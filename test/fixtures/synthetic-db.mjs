@@ -17,10 +17,12 @@ export const ID = {
   tagAlpha: guid(201), tagBeta: guid(202),
   nActive: guid(301), nEmptyText: guid(302), nSpace: guid(303), nTrashed: guid(304), nBadId: '../../escape',
   aPresent: guid(401), aMissing: guid(402), aWrongSize: guid(403), aInactive: guid(404), aBadHash: guid(405),
-  aTrashedNote: guid(406), aOnBadIdNote: guid(407)
+  aTrashedNote: guid(406), aOnBadIdNote: guid(407),
+  // 504: three scanned images on the Space note — Telugu words, a large page of words, and a scan with no words.
+  aTelugu: guid(408), aLargeScan: guid(409), aNoWords: guid(410)
 };
 export const HASH = { present: hash(1), missing: hash(2), wrongSize: hash(3), inactive: hash(4), trashed: hash(6),
-  onBadIdNote: hash(7), bad: 'ZZ../not-hex' };
+  onBadIdNote: hash(7), bad: 'ZZ../not-hex', telugu: hash(8), largeScan: hash(9), noWords: hash(10) };
 
 // recoIndex as Evernote stores it: hex of the XML. Item 1 has a tie (first wins), item 2 an entity and a lower
 // second candidate, item 3 no <t> at all (an object region), item 4 a decimal and a hex character reference.
@@ -33,6 +35,14 @@ export const RECO_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <item x="40" y="1" w="10" h="5"><t w="90">caf&#233;&#x21;</t></item>
 </recoIndex>`;
 export const RECO_WORDS = 'Invoice R&D<2> café!';
+
+// 504: a non-Latin record, a large one (~9 KB of words, 1,000 items) and one with regions but no <t> (stored `empty`).
+const reco = (items) => `<?xml version="1.0" encoding="UTF-8"?>\n<recoIndex docType="unknown" objType="image" recoType="service">\n${items}\n</recoIndex>`;
+export const TELUGU_WORDS = 'నమస్కారం ప్రపంచం';
+export const RECO_TELUGU = reco(TELUGU_WORDS.split(' ').map((w) => `<item x="1" y="1" w="9" h="9"><t w="80">${w}</t></item>`).join('\n'));
+export const LARGE_WORDS = Array.from({ length: 1000 }, (_, i) => `scan${String(i).padStart(4, '0')}`).join(' ');
+export const RECO_LARGE = reco(LARGE_WORDS.split(' ').map((w) => `<item x="1" y="1" w="9" h="9"><t w="70">${w}</t></item>`).join('\n'));
+export const RECO_NO_WORDS = reco('<item x="1" y="1" w="9" h="9"><object type="face" w="40"/></item>');
 
 const NOTE_DEFAULTS = { isMetadata: 0, isUntitled: 0, isExternal: 0, content_localChangeTimestamp: 0,
   content_hash: 'h', content_size: 0, internal_shareCountProfiles: '{}', internal_maxResourceVersion: 0,
@@ -110,12 +120,18 @@ export function buildSyntheticAccount({ root = mkdtempSync(join(tmpdir(), 'kosko
   att(ID.aBadHash, ID.nEmptyText, HASH.bad, 4);
   att(ID.aTrashedNote, ID.nTrashed, HASH.trashed, 2);
   att(ID.aOnBadIdNote, ID.nBadId, HASH.onBadIdNote, 1);
+  att(ID.aTelugu, ID.nSpace, HASH.telugu, 6, 1, 'telugu.png');
+  att(ID.aLargeScan, ID.nSpace, HASH.largeScan, 8, 1, 'page.png');
+  att(ID.aNoWords, ID.nSpace, HASH.noWords, 10, 1, 'photo.png');
 
   const hex = (s) => Buffer.from(s, 'utf8').toString('hex');
   insert(db, 'AttachmentRecognition', { id: ID.aPresent, content: hex(RECO_XML) });
   insert(db, 'AttachmentRecognition', { id: ID.aWrongSize, content: 'zz-not-hex' });
   insert(db, 'AttachmentRecognition', { id: ID.aMissing, content: '' }); // scanned, no text found
   insert(db, 'AttachmentRecognition', { id: ID.aTrashedNote, content: hex(RECO_XML) });
+  insert(db, 'AttachmentRecognition', { id: ID.aTelugu, content: hex(RECO_TELUGU) });
+  insert(db, 'AttachmentRecognition', { id: ID.aLargeScan, content: hex(RECO_LARGE) });
+  insert(db, 'AttachmentRecognition', { id: ID.aNoWords, content: hex(RECO_NO_WORDS) });
 
   if (mutate) mutate(db);
   db.close();
@@ -128,6 +144,9 @@ export function buildSyntheticAccount({ root = mkdtempSync(join(tmpdir(), 'kosko
   put(ID.nActive, HASH.present, 5);
   put(ID.nActive, HASH.wrongSize, 4); // recorded 9
   put(ID.nTrashed, HASH.trashed, 2);
+  put(ID.nSpace, HASH.telugu, 6);
+  put(ID.nSpace, HASH.largeScan, 8);
+  put(ID.nSpace, HASH.noWords, 10);
   // aMissing has no file; aBadHash and aOnBadIdNote must never be looked up.
 
   return { root, dataDir, dbPath, resourceCacheDir: cacheDir, userId: USER_ID };
@@ -136,8 +155,9 @@ export function buildSyntheticAccount({ root = mkdtempSync(join(tmpdir(), 'kosko
 /** What the reader must report for the account above. */
 export const EXPECTED_COUNTS = Object.freeze({
   notes: 4, trashedNotes: 1, notesWithoutNotebook: 1, notebooks: 4, stacks: 2, tags: 2,
-  noteTags: 2, noteTagsAll: 3, attachments: 5, attachmentBytes: 5 + 7 + 9 + 4 + 1, ocr: 3, ocrAll: 4,
+  noteTags: 2, noteTagsAll: 3, attachments: 8, attachmentBytes: 5 + 7 + 9 + 4 + 1 + 6 + 8 + 10, ocr: 6, ocrAll: 7,
   emptyPlainText: 2,
   // stored OCR on active attachments: the recoIndex XML as hex, plus the 10-char 'zz-not-hex' record, halved
   ocrStoredBytes: Buffer.byteLength(RECO_XML, 'utf8') + 5
+    + [RECO_TELUGU, RECO_LARGE, RECO_NO_WORDS].reduce((n, x) => n + Buffer.byteLength(x, 'utf8'), 0)
 });

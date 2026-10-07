@@ -41,8 +41,8 @@ test('the synthetic account passes the check and the plan holds every section', 
   assert.deepEqual(plan.source, { userId: USER_ID, host: HOST_DIR, majorVersion: 3, migrationVersion: 139 });
   assert.deepEqual(plan.counts, EXPECTED_COUNTS);
   assert.equal(plan.notes.length, 4);
-  assert.equal(plan.attachments.length, 5);
-  assert.equal(plan.ocr.length, 2);
+  assert.equal(plan.attachments.length, 8);
+  assert.equal(plan.ocr.length, 5); // 504: + Telugu, large and no-words records; the unreadable one is a problem
   assert.equal(plan.noteTags.length, 2);
   assert.equal(plan.notebooks.length, 4);
   assert.equal(plan.stacks.length, 2);

@@ -27,7 +27,8 @@ test('benign: a checked plan loads', () => {
 });
 
 test('the database is compared on every count the receipt checks, and nothing else', () => {
-  assert.deepEqual(countDifferences(COUNTS, { ...COUNTS, ocr: 99, attachmentBytes: 1 }), []);
+  assert.deepEqual(countDifferences(COUNTS, { ...COUNTS, attachmentBytes: 1, ocrAll: 9, ocrStoredBytes: 1 }), []);
+  assert.deepEqual(countDifferences(COUNTS, { ...COUNTS, ocr: 99 }), ['ocr: the plan has 3, Evernote now has 99']); // 504
   assert.deepEqual(countDifferences(COUNTS, { ...COUNTS, notes: 5, trashedNotes: 0 }),
     ['notes: the plan has 4, Evernote now has 5', 'trashedNotes: the plan has 1, Evernote now has 0']);
   for (const k of ['notebooks', 'stacks', 'tags', 'noteTags', 'attachments']) {
@@ -35,6 +36,6 @@ test('the database is compared on every count the receipt checks, and nothing el
   }
 });
 
-test('expected counts: the eight the job and the receipt carry, missing files from the plan\'s problems', () => {
-  assert.deepEqual(expectedOf(plan()), { notes: 4, attachments: 5, notebooks: 4, stacks: 2, tags: 2, noteTags: 2, trashedNotes: 1, missingFiles: 1 });
+test('expected counts: the nine the job and the receipt carry, missing files from the plan\'s problems, ocr from the plan\'s tally', () => {
+  assert.deepEqual(expectedOf(plan()), { notes: 4, attachments: 5, notebooks: 4, stacks: 2, tags: 2, noteTags: 2, trashedNotes: 1, missingFiles: 1, ocr: 3 });
 });

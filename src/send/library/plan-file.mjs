@@ -4,9 +4,9 @@
 // the receipt could never add up (ADR-0007), so the run stops and says to run the dry run again.
 import { readFileSync } from 'node:fs';
 
-// What the receipt compares (465) and what the database is re-counted on. Not the OCR or byte totals: those do not
-// reach the receipt in W2, and a re-sync of OCR alone must not block a send.
-export const COMPARED = Object.freeze(['notes', 'trashedNotes', 'notebooks', 'stacks', 'tags', 'noteTags', 'attachments']);
+// What the receipt compares (465, and 501's image text) and what the database is re-counted on. Not the byte total:
+// it does not reach the receipt. OCR does since 504: a plan whose OCR count differs could never add up.
+export const COMPARED = Object.freeze(['notes', 'trashedNotes', 'notebooks', 'stacks', 'tags', 'noteTags', 'attachments', 'ocr']);
 
 export function loadPlan(planPath) {
   let text;
@@ -27,9 +27,10 @@ export function countDifferences(planCounts, dbCounts) {
     .map((k) => `${k}: the plan has ${num(planCounts[k])}, Evernote now has ${num(dbCounts[k])}`);
 }
 
-/** The job's expected counts (465): notes and attachments, and the six structure counts a desktop job may carry. */
+/** The job's expected counts (465): notes and attachments, the six structure counts a desktop job may carry, and ocr. */
 export function expectedOf(plan) {
   const c = plan.counts;
   return { notes: c.notes, attachments: c.attachments, notebooks: c.notebooks, stacks: c.stacks, tags: c.tags,
-    noteTags: c.noteTags, trashedNotes: c.trashedNotes, missingFiles: plan.problems?.missingFiles?.length ?? 0 };
+    noteTags: c.noteTags, trashedNotes: c.trashedNotes, missingFiles: plan.problems?.missingFiles?.length ?? 0,
+    ocr: c.ocr }; // 501/504: every OCR record of the plan, unreadable ones included (457's tally.ocr)
 }

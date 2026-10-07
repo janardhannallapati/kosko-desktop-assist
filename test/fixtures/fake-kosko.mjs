@@ -33,7 +33,9 @@ export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
     expireUploads: 0, // the next N store PUTs answer 403 (an expired presigned URL)
     mintErrors: [], // codes answered, one per item, by the next attachments/batch items
     failNextNotesBatch: 0,
-    tagCalls: [], noteIdCalls: []
+    tagCalls: [], noteIdCalls: [],
+    // 501/504: image text by `${note_id}|${md5}`, and each ocr/batch call's item count and JSON byte size
+    ocr: new Map(), ocrCalls: []
   };
 
   function job(id) { return state.jobs.find((j) => j.id === id); }
@@ -137,6 +139,44 @@ export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
       });
       return json(200, { results });
     },
+    // Kosko 501's shape check (exactly four keys, a uuid and a 32-hex md5, empty ⇔ '' text, ≤ 32,768 characters,
+    // 1–500 items, ≤ 4 MB), then 500's import_ocr: the note must be a live note of this account, the md5 one of that
+    // note's stored attachments, and the row is upserted by (note_id, md5) as created / updated / unchanged.
+    'POST /api/import/ocr/batch': (body, _id, raw) => {
+      if (Buffer.byteLength(raw) > 4 * 1024 * 1024) return json(413, { code: 'too_large' });
+      const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const keys = ['note_id', 'md5', 'status', 'text'];
+      const okItem = (it) => it && typeof it === 'object' && Object.keys(it).length === 4 && keys.every((k) => Object.hasOwn(it, k))
+        && UUID.test(String(it.note_id)) && /^[0-9a-f]{32}$/.test(String(it.md5)) && typeof it.text === 'string' && it.text.length <= 32768
+        && ((it.status === 'empty' && it.text === '') || (it.status === 'words' && it.text.trim() !== ''));
+      if (!UUID.test(String(body?.job_id)) || !Array.isArray(body.items) || body.items.length < 1 || body.items.length > 500 || !body.items.every(okItem)) {
+        return json(400, { code: 'invalid' });
+      }
+      if (!openJob(body.job_id)) return json(409, { code: 'job_closed' });
+      state.ocrCalls.push({ items: body.items.length, bytes: Buffer.byteLength(raw) });
+      let created = 0; let updated = 0; let unchanged = 0;
+      const refused = [];
+      body.items.forEach((it, i) => {
+        const note = state.notes.get(it.note_id.toLowerCase());
+        if (!note) { refused.push({ i, reason: 'note_not_found' }); return; }
+        const stored = new Set();
+        (function walk(n) {
+          if (!n || typeof n !== 'object') return;
+          // Kosko 500 rule 5, exactly: this note's own stored key, or the placeholder of a file not on this computer.
+          const p = String(n.attrs?.path ?? '');
+          const m = new RegExp(`^notes/${it.note_id.toLowerCase()}/(?:images|attachments)/([0-9a-f]{32})\\.[^/]+$`).exec(p) || /^enex-resource:([0-9a-f]{32})$/.exec(p);
+          if (m) stored.add(m[1]);
+          (n.content ?? []).forEach(walk);
+        })(note.content);
+        if (!stored.has(it.md5)) { refused.push({ i, reason: 'not_an_attachment' }); return; }
+        const k = `${it.note_id.toLowerCase()}|${it.md5}`;
+        const was = state.ocr.get(k);
+        if (!was) created++; else if (was.status === it.status && was.text === it.text) unchanged++; else updated++;
+        state.ocr.set(k, { status: it.status, text: it.text });
+      });
+      state.ocrCalls.at(-1).answer = { created, updated, unchanged, refused: refused.length };
+      return json(200, { created, updated, unchanged, refused });
+    },
     'POST /api/import/refusals': (body) => { state.refusals.push(body); return json(200, { outcome: 'not_imported' }); }
   };
 
@@ -158,7 +198,7 @@ export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
     const handler = routes[key];
     if (!handler) return json(404, { code: 'not_found' });
     if (init.headers?.authorization !== 'Bearer ' + fake.token) return json(401, { error: 'no' });
-    return handler(init.body ? JSON.parse(init.body) : undefined, m?.[1]);
+    return handler(init.body ? JSON.parse(init.body) : undefined, m?.[1], init.body ?? '');
   };
 
   const fake = { fetch, state, token: null, job };
@@ -171,7 +211,10 @@ function receiptOk(r) {
   if (!r || r.v !== 1 || !Object.keys(r).every((k) => keys.includes(k))) return false;
   if (!r.desktop) return true;
   const d = r.desktop;
-  const counts = ['notebooks', 'stacks', 'spaceNotebooks', 'tags', 'tagsDropped', 'noteTags', 'trashedNotes', 'missingFiles', 'missingMore'];
+  // 501: the OCR group is all five keys or none.
+  const OCR = ['ocrWords', 'ocrEmpty', 'ocrUnreadable', 'ocrNotSent', 'ocrRefused'];
+  const counts = ['notebooks', 'stacks', 'spaceNotebooks', 'tags', 'tagsDropped', 'noteTags', 'trashedNotes', 'missingFiles', 'missingMore',
+    ...(OCR.some((k) => Object.hasOwn(d, k)) ? OCR : [])];
   if (Object.keys(d).length !== counts.length + 1 || !counts.every((k) => Number.isInteger(d[k]) && d[k] >= 0)) return false;
   if (!Array.isArray(d.missing) || d.missing.length > 1000) return false;
   if (!d.missing.every((m) => Object.keys(m).length === 2 && typeof m.note === 'string' && typeof m.name === 'string')) return false;
