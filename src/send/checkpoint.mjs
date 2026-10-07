@@ -59,13 +59,15 @@ export class OldCheckpointError extends Error {}
 
 /**
  * { checkpoint, reason }: a usable checkpoint and reason null, or checkpoint null and why it was not used. Throws
- * OldCheckpointError for a version-1 checkpoint: the person must start a new run on purpose (504).
+ * OldCheckpointError for a version-1 checkpoint: the person must start a new run on purpose (504), and the read's own
+ * error for a file that cannot be read (EACCES, EISDIR): only a file that is not JSON is "starting over".
  */
 export function loadCheckpoint(planPath, { plan, app }) {
   const path = checkpointPath(planPath);
   if (!existsSync(path)) return { checkpoint: null, reason: null };
+  const raw = readFileSync(path, 'utf8'); // a file that cannot be READ (EACCES, EISDIR) is an error, not "starting over"
   let c;
-  try { c = JSON.parse(readFileSync(path, 'utf8')); } catch { return { checkpoint: null, reason: 'The saved progress is not a checkpoint this tool wrote; starting over.' }; }
+  try { c = JSON.parse(raw); } catch { return { checkpoint: null, reason: 'The saved progress is not a checkpoint this tool wrote; starting over.' }; }
   if (isPlain(c) && c.format === FORMAT && c.version === 1) {
     throw new OldCheckpointError(`The saved progress (${path}) is from an earlier version of this tool, which did not send `
       + 'image text, so it cannot be continued. Delete that file to start a new run; notes already in Kosko are not sent twice.');

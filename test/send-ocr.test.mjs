@@ -3,7 +3,7 @@
 // refused, and the receipt's five counts adding up to the plan's tally.ocr. Against the in-memory Kosko.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildSyntheticAccount, ID, HASH, TELUGU_WORDS, LARGE_WORDS } from './fixtures/synthetic-db.mjs';
@@ -234,4 +234,148 @@ test('an md5 stored under ANOTHER note\'s folder is refused not_an_attachment; t
   await createOcrSender({ api, sender: { call: (f) => f() }, jobId: job, cp, plan })([{ key: 'g1', outcome: 'skipped', koskoId: space.id }]);
   assert.deepEqual(cp.ocr, { a0: 'refused:not_an_attachment' });
   assert.equal(ocrCounts(cp.ocr).ocrRefused, 1);
+});
+
+// Review fixes: a reply that is not what Kosko promises stops the run, and that batch is left unbucketed so the next
+// run sends it again.
+const TEXT = 'secret words';
+function strict({ answer, noteIds }) {
+  const calls = [];
+  const api = { ocrBatch: async (body) => { calls.push(body); return typeof answer === 'function' ? answer(body) : answer; },
+    noteIds: async (body) => (typeof noteIds === 'function' ? noteIds(body) : noteIds) };
+  const plan = { notes: [{ id: 'g1' }], attachments: [{ id: 'a0', noteId: 'g1', dataHash: 'a'.repeat(32) }, { id: 'a1', noteId: 'g1', dataHash: 'b'.repeat(32) }],
+    ocr: [{ attachmentId: 'a0', text: TEXT, wordCount: 2 }, { attachmentId: 'a1', text: 'y', wordCount: 1 }], problems: { ocrErrors: [] } };
+  const cp = emptyCheckpoint({ plan: { sha256: '0'.repeat(64), bytes: 1 }, app: APP, jobId: JOB });
+  const send = createOcrSender({ api, sender: { call: (f) => f() }, jobId: JOB, cp, plan });
+  return { calls, cp, send };
+}
+const stops = async (p) => {
+  await assert.rejects(p, (e) => {
+    assert.equal(e.name, 'SendStopped');
+    assert.ok(!e.message.includes(TEXT), 'image text never in an error');
+    return true;
+  });
+};
+
+for (const [name, answer] of [
+  ['the counts do not add up to the items', { created: 1, updated: 0, unchanged: 0, refused: [] }],
+  ['more counted than sent', { created: 2, updated: 0, unchanged: 0, refused: [{ i: 0, reason: 'locked' }] }],
+  ['a refused index out of range', { created: 1, updated: 0, unchanged: 0, refused: [{ i: 2, reason: 'locked' }] }],
+  ['a refused index that is not an integer', { created: 1, updated: 0, unchanged: 0, refused: [{ i: '0', reason: 'locked' }] }],
+  ['a refused index named twice', { created: 0, updated: 0, unchanged: 0, refused: [{ i: 0, reason: 'locked' }, { i: 0, reason: 'locked' }] }],
+  ['a negative count', { created: 3, updated: -1, unchanged: 0, refused: [] }],
+  ['a fractional count', { created: 1.5, updated: 0.5, unchanged: 0, refused: [] }],
+  ['no refused list', { created: 2, updated: 0, unchanged: 0 }],
+  ['not an object', null]
+]) {
+  test(`an ocr/batch reply that does not reconcile stops the run and buckets nothing: ${name}`, async () => {
+    const h = strict({ answer });
+    await stops(h.send([{ key: 'g1', outcome: 'created', koskoId: NOTE }]));
+    assert.deepEqual(h.cp.ocr, {}, 'the batch is not bucketed');
+    // The next run sends the same records again.
+    const again = strict({ answer: { created: 2, updated: 0, unchanged: 0, refused: [] } });
+    Object.assign(again.cp.ocr, h.cp.ocr);
+    await again.send([{ key: 'g1', outcome: 'created', koskoId: NOTE }]);
+    assert.equal(again.calls[0].items.length, 2);
+  });
+}
+
+test('a reconciled reply with a refusal still buckets each item', async () => {
+  const h = strict({ answer: { created: 0, updated: 0, unchanged: 1, refused: [{ i: 1, reason: 'locked' }] } });
+  await h.send([{ key: 'g1', outcome: 'created', koskoId: NOTE }]);
+  assert.deepEqual(h.cp.ocr, { a0: 'words', a1: 'refused:locked' });
+});
+
+for (const [name, noteIds] of [
+  ['no ids object', {}],
+  ['ids is not an object', { ids: [] }],
+  ['the fingerprint asked about is missing', { ids: { other: { id: null, state: 'trash' } } }],
+  ['an unknown state', { ids: { fp1: { id: null, state: 'gone' } } }],
+  ['here without a uuid', { ids: { fp1: { id: 'nope', state: 'here' } } }]
+]) {
+  test(`a note-ids reply that does not answer the note stops the run; not_sent is never guessed: ${name}`, async () => {
+    const h = strict({ answer: { created: 2, updated: 0, unchanged: 0, refused: [] }, noteIds });
+    await stops(h.send([{ key: 'g1', fp: 'fp1', outcome: 'skipped' }]));
+    assert.deepEqual(h.cp.ocr, {}, 'nothing written to the checkpoint');
+    assert.equal(h.calls.length, 0);
+  });
+}
+
+for (const st of ['trash', 'deleted', 'new']) {
+  test(`note-ids answering ${st} for a settled note buckets its image text not_sent and posts nothing`, async () => {
+    const h = strict({ answer: { created: 2, updated: 0, unchanged: 0, refused: [] },
+      noteIds: { ids: { fp1: { id: st === 'new' ? NOTE : null, state: st } } } });
+    await h.send([{ key: 'g1', fp: 'fp1', outcome: 'skipped' }]);
+    assert.deepEqual(h.cp.ocr, { a0: 'not_sent', a1: 'not_sent' });
+    assert.equal(h.calls.length, 0);
+  });
+}
+
+test('note-ids answering here gives the resumed note its id', async () => {
+  const h = strict({ answer: { created: 2, updated: 0, unchanged: 0, refused: [] }, noteIds: { ids: { fp1: { id: NOTE, state: 'here' } } } });
+  await h.send([{ key: 'g1', fp: 'fp1', outcome: 'skipped' }]);
+  assert.deepEqual(h.calls[0].items.map((i) => i.note_id), [NOTE, NOTE]);
+});
+
+test('fake fidelity: note-ids answers trash and deleted with id null, as the real route does', async () => {
+  const s = await setup();
+  await send(s);
+  const notes = [...s.kosko.state.notes.values()];
+  const space = notes.find((n) => n.title === 'In a Space');
+  const active = notes.find((n) => n.external_id === ID.nActive);
+  const fpOf = (nodeId) => [...s.kosko.state.ledgerByFp].find(([, e]) => e.nodeId === nodeId)[0];
+  s.kosko.state.trashed.add(space.id);
+  s.kosko.state.notes.delete(active.id); // deleted in Kosko; the ledger keeps its entry
+  const ask = async (body) => (await s.kosko.fetch(`${APP}/api/import/note-ids`, { method: 'POST', headers: { authorization: `Bearer ${TOKEN}` }, body: JSON.stringify(body) })).json();
+  const byFp = await ask({ fingerprints: [fpOf(space.id), fpOf(active.id)] });
+  assert.deepEqual(byFp.ids[fpOf(space.id)], { id: null, state: 'trash' });
+  assert.deepEqual(byFp.ids[fpOf(active.id)], { id: null, state: 'deleted' });
+  const byGuid = await ask({ fingerprints: [fpOf(space.id), fpOf(active.id)], external_ids: [space.external_id ?? null, active.external_id] });
+  assert.deepEqual(byGuid.ids[fpOf(space.id)], { id: null, state: 'trash' });
+  assert.deepEqual(byGuid.ids[fpOf(active.id)], { id: null, state: 'deleted' });
+});
+
+test('fake fidelity: ocr/batch refuses a trashed note note_not_found and a locked note locked (import_ocr)', async () => {
+  const s = await setup();
+  await send(s);
+  const notes = [...s.kosko.state.notes.values()];
+  const space = notes.find((n) => n.title === 'In a Space');
+  const active = notes.find((n) => n.external_id === ID.nActive);
+  s.kosko.state.trashed.add(space.id);
+  s.kosko.state.locked.add(active.id);
+  const res = await s.kosko.fetch(`${APP}/api/import/jobs`, { method: 'POST', headers: { authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ source: 'desktop' }) });
+  const { id: job } = await res.json();
+  const ans = await (await s.kosko.fetch(`${APP}/api/import/ocr/batch`, { method: 'POST', headers: { authorization: `Bearer ${TOKEN}` },
+    body: JSON.stringify({ job_id: job, items: [
+      { note_id: space.id, md5: HASH.telugu, status: 'words', text: 'x' },
+      { note_id: active.id, md5: HASH.present, status: 'words', text: 'x' }] }) })).json();
+  assert.deepEqual(ans, { created: 0, updated: 0, unchanged: 0, refused: [{ i: 0, reason: 'note_not_found' }, { i: 1, reason: 'locked' }] });
+});
+
+test('a backfill where one imported note is now in Kosko\'s trash: its image text is not_sent, nothing posted for it, the counts add up', async () => {
+  const s = await setup();
+  await send(s);
+  const space = [...s.kosko.state.notes.values()].find((n) => n.title === 'In a Space');
+  s.kosko.state.ocr.clear(); // as if the first run had been a W2 run
+  s.kosko.state.trashed.add(space.id);
+  rmSync(checkpointPath(s.planPath));
+  s.bodies.length = 0;
+  const r = await send(s);
+  assert.equal(r.exitCode, 0, r.out);
+  const job = s.kosko.job(r.jobId);
+  const d = job.receipt.desktop;
+  assert.ok(!sentItems(s).some((i) => i.note_id === space.id), 'nothing posted for the trashed note');
+  assert.ok(sentItems(s).length > 0, 'the other notes\' image text was sent');
+  assert.equal(d.ocrNotSent, 3, 'the trashed note\'s three records');
+  assert.equal(d.ocrRefused, 0);
+  assert.equal(sumOf(d), job.summary.expected.ocr);
+});
+
+test('a checkpoint that cannot be read (a directory: EISDIR) is logged and exits 1, never a raw rejection', async () => {
+  const s = await setup();
+  mkdirSync(checkpointPath(s.planPath));
+  const r = await send(s);
+  assert.equal(r.exitCode, 1);
+  assert.match(r.out, /The import stopped: .*EISDIR/);
+  assert.deepEqual(s.kosko.state.requests, [], 'nothing was sent');
 });

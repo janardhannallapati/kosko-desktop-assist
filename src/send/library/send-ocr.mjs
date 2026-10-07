@@ -7,6 +7,10 @@
 //   not_sent            its note was not imported, is in Kosko's trash or was deleted there, or is not in the plan
 //   unreadable          Evernote's record could not be read (the dry run's problems.ocrErrors), or its md5 is not one
 // The text is the person's; it is sent, never logged, never written to the checkpoint.
+//
+// A reply that is not what Kosko promises (counts that do not add up to the items, a refusal naming no item, a note
+// the note-ids answer is silent about) stops the run and buckets nothing for that call, so the next run sends it again.
+import { SendStopped } from '../errors.mjs';
 
 const MAX_ITEMS = 500; // Kosko 501: 1–500 items per call
 const MAX_BYTES = 3.5 * 1024 * 1024; // Kosko answers 413 over 4 MB; the tool keeps under 3.5 MB (504)
@@ -18,6 +22,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const GUID_RE = /^[A-Za-z0-9_-]{1,64}$/; // Kosko 463's external_id check (as send-notes.mjs)
 const REASON_RE = /^[a-z_]{1,40}$/;
 const SENT = new Set(['created', 'skipped']);
+const NOT_LIVE = new Set(['trash', 'deleted', 'new', 'clash']); // note-ids states with no live Kosko note (Kosko 424/463)
+const isCount = (n) => Number.isInteger(n) && n >= 0;
+
+// The person's text is never in the message: it names the route only.
+const badAnswer = (route) => new SendStopped('bad_answer', `Kosko answered ${route} in a way this tool does not `
+  + 'understand, so the import stopped. Nothing already sent is lost; run the assist again to continue.');
 
 export const emptyOcrCounts = () => ({ ocrWords: 0, ocrEmpty: 0, ocrUnreadable: 0, ocrNotSent: 0, ocrRefused: 0 });
 
@@ -61,9 +71,14 @@ export function createOcrSender({ api, sender, jobId, cp, plan, maxItems = MAX_I
       const chunk = xs.slice(i, i + NOTE_IDS_CALL);
       const ask = await sender.call(() => api.noteIds({ fingerprints: chunk.map((x) => x.fp),
         external_ids: chunk.map((x) => (GUID_RE.test(String(x.key)) ? x.key : null)) }));
+      const ids = ask?.ids;
+      if (!ids || typeof ids !== 'object' || Array.isArray(ids)) throw badAnswer('note-ids');
       for (const x of chunk) {
-        const st = ask?.ids?.[x.fp];
-        x.koskoId = st?.state === 'here' && UUID_RE.test(String(st.id)) ? String(st.id) : null;
+        // Silence about a note is not "not imported": only an explicit state does that (absent is not zero).
+        const st = Object.hasOwn(ids, x.fp) ? ids[x.fp] : null;
+        if (st?.state === 'here' && UUID_RE.test(String(st.id))) x.koskoId = String(st.id);
+        else if (NOT_LIVE.has(st?.state)) x.koskoId = null;
+        else throw badAnswer('note-ids');
       }
     }
   }
@@ -71,8 +86,14 @@ export function createOcrSender({ api, sender, jobId, cp, plan, maxItems = MAX_I
   async function post(items) {
     const res = await sender.call(() => api.ocrBatch({ job_id: jobId,
       items: items.map(({ noteId, r }) => ({ note_id: noteId, md5: r.md5, status: r.status, text: r.text })) }));
-    const refused = new Map((Array.isArray(res?.refused) ? res.refused : [])
-      .filter((f) => Number.isInteger(f?.i) && items[f.i]).map((f) => [f.i, REASON_RE.test(String(f.reason)) ? f.reason : 'refused']));
+    // Kosko 501: created + updated + unchanged + refused = items, each refusal naming one item once.
+    if (!res || !Array.isArray(res.refused) || ![res.created, res.updated, res.unchanged].every(isCount)
+      || res.created + res.updated + res.unchanged + res.refused.length !== items.length) throw badAnswer('ocr/batch');
+    const refused = new Map();
+    for (const f of res.refused) {
+      if (!Number.isInteger(f?.i) || f.i < 0 || f.i >= items.length || refused.has(f.i)) throw badAnswer('ocr/batch');
+      refused.set(f.i, REASON_RE.test(String(f.reason)) ? f.reason : 'refused');
+    }
     items.forEach(({ r }, i) => { cp.ocr[r.id] = refused.has(i) ? `refused:${refused.get(i)}` : r.status; });
   }
 

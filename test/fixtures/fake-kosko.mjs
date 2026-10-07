@@ -35,7 +35,10 @@ export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
     failNextNotesBatch: 0,
     tagCalls: [], noteIdCalls: [],
     // 501/504: image text by `${note_id}|${md5}`, and each ocr/batch call's item count and JSON byte size
-    ocr: new Map(), ocrCalls: []
+    ocr: new Map(), ocrCalls: [],
+    // A note in Kosko's trash, or locked (encryption <> 'none'), by node id. A DELETED note: remove it from `notes`
+    // and keep its ledger entry (Kosko 420's tombstone answers the same way).
+    trashed: new Set(), locked: new Set()
   };
 
   function job(id) { return state.jobs.find((j) => j.id === id); }
@@ -98,11 +101,15 @@ export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
       const ids = {};
       fingerprints.forEach((fp, i) => {
         const g = guids?.[i] ?? null;
-        const byGuid = g ? state.ledgerByGuid.get(g) : null;
-        if (byGuid) { ids[fp] = { id: byGuid.nodeId, state: 'here' }; return; }
-        const byFp = state.ledgerByFp.get(fp);
-        if (byFp && g && byFp.guid && byFp.guid !== g) { ids[fp] = { id: null, state: 'clash' }; return; }
-        if (byFp) { ids[fp] = { id: byFp.nodeId, state: 'here' }; return; }
+        // Kosko 424/463: the GUID's entry first, then the fingerprint's; a live node is `here`, a trashed one `trash`,
+        // one gone (or unreadable) `deleted` — the last two with no id.
+        const e = (g && state.ledgerByGuid.get(g)) || state.ledgerByFp.get(fp);
+        if (e && g && e.guid && e.guid !== g) { ids[fp] = { id: null, state: 'clash' }; return; }
+        if (e) {
+          ids[fp] = !state.notes.has(e.nodeId) ? { id: null, state: 'deleted' }
+            : state.trashed.has(e.nodeId) ? { id: null, state: 'trash' } : { id: e.nodeId, state: 'here' };
+          return;
+        }
         ids[fp] = { id: uuidOf(`fp:${fp}`), state: 'new' };
       });
       return json(200, { ids });
@@ -140,8 +147,10 @@ export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
       return json(200, { results });
     },
     // Kosko 501's shape check (exactly four keys, a uuid and a 32-hex md5, empty ⇔ '' text, ≤ 32,768 characters,
-    // 1–500 items, ≤ 4 MB), then 500's import_ocr: the note must be a live note of this account, the md5 one of that
-    // note's stored attachments, and the row is upserted by (note_id, md5) as created / updated / unchanged.
+    // 1–500 items, ≤ 4 MB), then 500's import_ocr item by item, in its order: a note that is missing, deleted or in
+    // the trash is refused note_not_found; a locked one locked; an md5 that is neither this note's own stored key
+    // (notes/<id>/images|attachments/<md5>.<ext>) nor an enex-resource:<md5> placeholder in its content is refused
+    // not_an_attachment. The rest are upserted by (note_id, md5) as created / updated / unchanged.
     'POST /api/import/ocr/batch': (body, _id, raw) => {
       if (Buffer.byteLength(raw) > 4 * 1024 * 1024) return json(413, { code: 'too_large' });
       const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -158,7 +167,8 @@ export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
       const refused = [];
       body.items.forEach((it, i) => {
         const note = state.notes.get(it.note_id.toLowerCase());
-        if (!note) { refused.push({ i, reason: 'note_not_found' }); return; }
+        if (!note || state.trashed.has(note.id)) { refused.push({ i, reason: 'note_not_found' }); return; }
+        if (state.locked.has(note.id)) { refused.push({ i, reason: 'locked' }); return; }
         const stored = new Set();
         (function walk(n) {
           if (!n || typeof n !== 'object') return;

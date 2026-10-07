@@ -64,8 +64,9 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
   try {
     loaded = loadCheckpoint(planPath, { plan: fp, app: api.origin });
   } catch (e) {
-    if (!(e instanceof OldCheckpointError)) throw e;
-    log(e.message); // before any request: a W2 checkpoint is never continued as if it had sent image text
+    // Before any request: a W2 checkpoint is never continued as if it had sent image text. Any other failure to read
+    // it (EACCES, EISDIR) is logged as the run's own stop, as it was before 504.
+    log(e instanceof OldCheckpointError ? e.message : redact(`The import stopped: ${e.message}`));
     return { exitCode: 1 };
   }
 
