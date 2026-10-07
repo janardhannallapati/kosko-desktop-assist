@@ -36,14 +36,17 @@ test('one run: every structure count equals the plan, and the receipt says so', 
   const job = s.kosko.job(r.jobId);
   assert.equal(job.source, 'desktop');
   assert.equal(job.status, 'complete');
-  assert.deepEqual(job.summary.expected, { notes: 4, attachments: 5, notebooks: 4, stacks: 2, tags: 2, noteTags: 2, trashedNotes: 1, missingFiles: 1 });
+  assert.deepEqual(job.summary.expected, { notes: 4, attachments: 8, notebooks: 4, stacks: 2, tags: 2, noteTags: 2, trashedNotes: 1, missingFiles: 1, ocr: 6 });
   assert.deepEqual(job.summary.notes, { created: 4, skipped: 0, not_imported: 0 });
   const a = job.summary.attachments;
-  assert.equal(Object.values(a).reduce((t, n) => t + n, 0), 5, 'every attachment accounted for');
-  assert.deepEqual(a, { stored: 1, placeholder: 1, over_cap: 0, type_not_stored: 0, unreadable: 3, not_imported_with_note: 0 });
+  assert.equal(Object.values(a).reduce((t, n) => t + n, 0), 8, 'every attachment accounted for');
+  assert.deepEqual(a, { stored: 4, placeholder: 1, over_cap: 0, type_not_stored: 0, unreadable: 3, not_imported_with_note: 0 });
   const d = job.receipt.desktop;
   assert.deepEqual({ ...d, missing: undefined }, { notebooks: 4, stacks: 2, spaceNotebooks: 1, tags: 2, tagsDropped: 0, noteTags: 2,
-    trashedNotes: 1, missingFiles: 1, missing: undefined, missingMore: 0 });
+    trashedNotes: 1, missingFiles: 1, missing: undefined, missingMore: 0,
+    // 504: present + Telugu + large have words; no-words is empty, and so is the missing file's scan, stored on its placeholder
+    // (Kosko 500 rule 5); the bad-hex record is unreadable
+    ocrWords: 3, ocrEmpty: 2, ocrUnreadable: 1, ocrNotSent: 0, ocrRefused: 0 });
   assert.deepEqual(d.missing, [{ note: 'Active note', name: 'lost.pdf' }]);
 });
 
@@ -66,7 +69,7 @@ test('the notes carry GUID, dates, notebook, tags and their plain text; the Spac
   const spaceNote = notes.find((n) => n.title === 'In a Space');
   const spaceNb = [...s.kosko.state.notebooks.entries()].find(([, id]) => id === spaceNote.parent_id)[0];
   assert.equal(spaceNb, 'null|personal');
-  assert.deepEqual(s.kosko.state.uploads.map((u) => u.bytes), [5]);
+  assert.deepEqual(s.kosko.state.uploads.map((u) => u.bytes).sort((x, y) => x - y), [5, 6, 8, 10]);
   assert.ok(!s.kosko.state.uploads.some((u) => u.headers.authorization));
 });
 
@@ -84,7 +87,7 @@ test('a second run creates nothing: all skipped, nothing uploaded, notebooks and
   assert.equal(job.receipt.desktop.notebooks, 4);
   assert.equal(job.receipt.desktop.tags, 2);
   assert.equal(job.receipt.desktop.noteTags, 2, 'links on skipped notes are accounted for too (465 contract)');
-  assert.equal(Object.values(job.summary.attachments).reduce((t, n) => t + n, 0), 5);
+  assert.equal(Object.values(job.summary.attachments).reduce((t, n) => t + n, 0), 8);
 });
 
 test('the count check runs first: a changed database stops the run before any request', async () => {
@@ -132,7 +135,7 @@ test('quota_exceeded is recorded as a refusal and named; the job still closes wi
   const job = s.kosko.job(r.jobId);
   assert.deepEqual(job.summary.notes, { created: 3, skipped: 0, not_imported: 1 });
   assert.equal(s.kosko.state.refusals[0].reason, 'quota_exceeded');
-  assert.equal(Object.values(job.summary.attachments).reduce((t, n) => t + n, 0), 5);
+  assert.equal(Object.values(job.summary.attachments).reduce((t, n) => t + n, 0), 8);
   assert.equal(job.summary.attachments.not_imported_with_note, 3);
   assert.equal(job.receipt.desktop.missingFiles, 1, 'a missing file of a refused note is still named');
 });
@@ -184,7 +187,7 @@ test('Ctrl-C leaves the job running; the next run continues it, keeping every ou
   assert.equal(second.jobId, first.jobId);
   const job = s.kosko.job(second.jobId);
   assert.deepEqual(job.summary.notes, { created: 4, skipped: 0, not_imported: 0 });
-  assert.deepEqual(job.summary.attachments, { stored: 0, placeholder: 1, over_cap: 0, type_not_stored: 1, unreadable: 3, not_imported_with_note: 0 });
+  assert.deepEqual(job.summary.attachments, { stored: 3, placeholder: 1, over_cap: 0, type_not_stored: 1, unreadable: 3, not_imported_with_note: 0 });
 });
 
 test('an expired upload link is minted again once; a re-mint refused leaves an honest placeholder, never a dead path', async () => {
@@ -192,7 +195,7 @@ test('an expired upload link is minted again once; a re-mint refused leaves an h
   s.kosko.state.expireUploads = 1;
   let r = await send(s);
   assert.equal(r.exitCode, 0, r.out);
-  assert.equal(s.kosko.job(r.jobId).summary.attachments.stored, 1);
+  assert.equal(s.kosko.job(r.jobId).summary.attachments.stored, 4);
   const s2 = await setup();
   s2.kosko.state.expireUploads = 1;
   const real = s2.kosko.fetch;
@@ -231,7 +234,8 @@ test('a cached file that changed since the dry run is never uploaded; it is coun
   writeFileSync(join(s.acct.resourceCacheDir, ID.nActive, HASH.present), Buffer.alloc(6, 2)); // was 5 bytes
   const r = await send(s);
   assert.equal(r.exitCode, 0, r.out);
-  assert.equal(s.kosko.state.uploads.length, 0);
+  assert.ok(!s.kosko.state.uploads.some((u) => u.path.endsWith(`${HASH.present}.png`)), 'the changed file is never PUT');
+  assert.equal(s.kosko.state.uploads.length, 3, 'only the Space note\'s three scans');
   assert.equal(s.kosko.job(r.jobId).summary.attachments.unreadable, 4);
 });
 

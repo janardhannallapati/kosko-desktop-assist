@@ -9,13 +9,16 @@ import { dirname, join } from 'node:path';
 
 export const CHECKPOINT_NAME = 'kosko-send-checkpoint.json';
 const FORMAT = 'kosko-send-checkpoint';
-const VERSION = 1;
-const KEYS = ['format', 'version', 'plan', 'app', 'jobId', 'notebooks', 'tags', 'notes', 'attachments', 'updatedAt'];
+// Version 2 (504) adds `ocr`: Evernote attachment id → the bucket its image-text record settled in.
+const VERSION = 2;
+const KEYS = ['format', 'version', 'plan', 'app', 'jobId', 'notebooks', 'tags', 'notes', 'attachments', 'ocr', 'updatedAt'];
 // A settled note: its outcome, and (467) the reason a resumed run's receipt must still name — `skipped:changed_in_evernote`,
 // `not_imported:id_clash`. The reason is a Kosko reason code (lib/enex/receipt-reasons.js shape).
 const OUTCOME_RE = /^(created|skipped|not_imported)(:[a-z_]{1,40})?$/;
 // 467 review H2: an attachment's receipt bucket, so a resumed run counts it as the run that settled it did.
 const BUCKETS = new Set(['stored', 'placeholder', 'over_cap', 'type_not_stored', 'unreadable', 'not_imported_with_note']);
+// 504: an OCR record's bucket (send-ocr.mjs); the refusal reason is a Kosko reason code.
+const OCR_BUCKET_RE = /^(words|empty|not_sent|unreadable|refused:[a-z_]{1,40})$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // An Evernote id or GUID, or "stack:<name>" — a name is the person's own text in any script (466 review H2), so any
 // characters but control characters, up to 400; never "__proto__", which JSON.parse makes an own key.
@@ -34,7 +37,7 @@ export function planFingerprint(planPath) {
 }
 
 export const emptyCheckpoint = ({ plan, app, jobId = null }) =>
-  ({ format: FORMAT, version: VERSION, plan, app, jobId, notebooks: {}, tags: { done: false }, notes: {}, attachments: {}, updatedAt: null });
+  ({ format: FORMAT, version: VERSION, plan, app, jobId, notebooks: {}, tags: { done: false }, notes: {}, attachments: {}, ocr: {}, updatedAt: null });
 
 const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const sameKeys = (o, keys) => Object.keys(o).length === keys.length && keys.every((k) => Object.hasOwn(o, k));
@@ -47,15 +50,28 @@ function isCheckpoint(c) {
     && mapOf(c.notebooks, (v) => typeof v === 'string' && UUID_RE.test(v))
     && isPlain(c.tags) && sameKeys(c.tags, ['done']) && typeof c.tags.done === 'boolean'
     && mapOf(c.notes, (v) => typeof v === 'string' && OUTCOME_RE.test(v)) && mapOf(c.attachments, (v) => v === true || BUCKETS.has(v))
+    && mapOf(c.ocr, (v) => typeof v === 'string' && OCR_BUCKET_RE.test(v))
     && (c.updatedAt === null || typeof c.updatedAt === 'string');
 }
 
-/** { checkpoint, reason }: a usable checkpoint and reason null, or checkpoint null and why it was not used. */
+/** A version-1 checkpoint (W2, before image text) is refused, never upgraded: its notes settled with no OCR record. */
+export class OldCheckpointError extends Error {}
+
+/**
+ * { checkpoint, reason }: a usable checkpoint and reason null, or checkpoint null and why it was not used. Throws
+ * OldCheckpointError for a version-1 checkpoint: the person must start a new run on purpose (504), and the read's own
+ * error for a file that cannot be read (EACCES, EISDIR): only a file that is not JSON is "starting over".
+ */
 export function loadCheckpoint(planPath, { plan, app }) {
   const path = checkpointPath(planPath);
   if (!existsSync(path)) return { checkpoint: null, reason: null };
+  const raw = readFileSync(path, 'utf8'); // a file that cannot be READ (EACCES, EISDIR) is an error, not "starting over"
   let c;
-  try { c = JSON.parse(readFileSync(path, 'utf8')); } catch { return { checkpoint: null, reason: 'The saved progress is not a checkpoint this tool wrote; starting over.' }; }
+  try { c = JSON.parse(raw); } catch { return { checkpoint: null, reason: 'The saved progress is not a checkpoint this tool wrote; starting over.' }; }
+  if (isPlain(c) && c.format === FORMAT && c.version === 1) {
+    throw new OldCheckpointError(`The saved progress (${path}) is from an earlier version of this tool, which did not send `
+      + 'image text, so it cannot be continued. Delete that file to start a new run; notes already in Kosko are not sent twice.');
+  }
   if (isPlain(c) && c.format === FORMAT && c.version !== VERSION) return { checkpoint: null, reason: `The saved progress is from another version (${c.version}); starting over.` };
   if (!isCheckpoint(c)) return { checkpoint: null, reason: 'The saved progress is not a checkpoint this tool wrote; starting over.' };
   if (c.plan.sha256 !== plan.sha256 || c.plan.bytes !== plan.bytes) return { checkpoint: null, reason: 'The saved progress is for another plan; starting over.' };

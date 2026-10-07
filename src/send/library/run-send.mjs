@@ -9,13 +9,14 @@ import { createSender } from '../sender.mjs';
 import { startThroughGate } from '../gate.mjs';
 import { SendStopped } from '../errors.mjs';
 import { redact } from '../token.mjs';
-import { planFingerprint, emptyCheckpoint, loadCheckpoint, saveCheckpoint } from '../checkpoint.mjs';
+import { planFingerprint, emptyCheckpoint, loadCheckpoint, saveCheckpoint, OldCheckpointError } from '../checkpoint.mjs';
 import { loadPlan, countDifferences, expectedOf } from './plan-file.mjs';
 import { notebookPlan, tagPaths, noteTagNames } from './structure.mjs';
 import { fingerprintsFor, versionOf } from './note-record.mjs';
 import { decideAttachment } from './attachments.mjs';
 import { createTally, emptyAttachmentCounts } from './tally.mjs';
 import { createNoteSender } from './send-notes.mjs';
+import { createOcrSender, ocrCounts } from './send-ocr.mjs';
 
 const BATCH_NOTES = 25; // Kosko 434 r1: 25 notes or 3.5 MB of JSON per batch
 const BATCH_BYTES = 3.5 * 1024 * 1024;
@@ -59,10 +60,18 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
   const fp = await planFingerprint(planPath);
   let cp = null;
   let jobId = null;
+  let loaded;
+  try {
+    loaded = loadCheckpoint(planPath, { plan: fp, app: api.origin });
+  } catch (e) {
+    // Before any request: a W2 checkpoint is never continued as if it had sent image text. Any other failure to read
+    // it (EACCES, EISDIR) is logged as the run's own stop, as it was before 504.
+    log(e instanceof OldCheckpointError ? e.message : redact(`The import stopped: ${e.message}`));
+    return { exitCode: 1 };
+  }
 
   try {
     const allowance = await sender.call(() => api.allowance());
-    const loaded = loadCheckpoint(planPath, { plan: fp, app: api.origin });
     if (loaded.reason) log(loaded.reason);
     if (loaded.checkpoint?.jobId) {
       const newest = await sender.call(() => api.newestJob());
@@ -112,6 +121,7 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
         version: await versionOf(note, tags, [...new Set(atts.map(({ a }) => a.dataHash))]) };
     }));
     const settle = (x, outcome, reason) => {
+      x.outcome = outcome;
       const counts = emptyAttachmentCounts();
       for (const { a, d } of x.atts) {
         // Settled in this run: its own verdict. Settled by the run that stopped: what that run recorded (review H2).
@@ -124,9 +134,20 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
         attachmentRows: x.atts.length, counts, missingFiles: x.atts.filter(({ d }) => d.missing === 'missing_from_cache').map(({ a }) => a.filename) });
       cp.notes[x.key] = reason ? `${outcome}:${reason}` : outcome;
     };
-    for (const x of info) if (Object.hasOwn(cp.notes, x.key)) { const [o, r] = cp.notes[x.key].split(':'); settle({ ...x, resumed: true }, o, r ?? null); }
-
+    const resumed = [];
+    for (const x of info) {
+      if (!Object.hasOwn(cp.notes, x.key)) continue;
+      const [o, r] = cp.notes[x.key].split(':');
+      const y = { ...x, resumed: true };
+      settle(y, o, r ?? null);
+      resumed.push(y);
+    }
     const sendBatch = createNoteSender({ api, sender, lanes, jobId, resourceCacheDir, cp, settle });
+    // 504: image text goes after its notes settle. Notes the stopped run settled get theirs first (their ids are asked
+    // for again); records already in the checkpoint are never sent twice.
+    const sendOcr = createOcrSender({ api, sender, jobId, cp, plan });
+    await sendOcr(resumed);
+    saveCheckpoint(planPath, cp);
     const pending = info.filter((x) => !tally.settledKeys.has(x.key));
     for (let i = 0; i < pending.length;) {
       const batch = [];
@@ -138,13 +159,15 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
         bytes += est;
       }
       await sendBatch(batch);
+      saveCheckpoint(planPath, cp); // the notes are settled even if their image text is not yet
+      await sendOcr(batch);
       saveCheckpoint(planPath, cp);
       log(`Sent ${num(tally.counts().settled)} of ${num(plan.notes.length)} notes.`);
     }
 
     const { notes, settled } = tally.counts();
     const allSettled = settled === plan.notes.length;
-    const { summary, receipt } = tally.build({ expected, structure, trashedNotes: plan.counts.trashedNotes });
+    const { summary, receipt } = tally.build({ expected, structure, trashedNotes: plan.counts.trashedNotes, ocr: ocrCounts(cp.ocr) });
     await sender.call(() => api.finishJob(jobId, { status: allSettled ? 'complete' : 'failed', summary, receipt }));
     log(`Done: ${num(notes.created)} created, ${num(notes.skipped)} already in Kosko, ${num(notes.not_imported)} not imported — `
       + `${num(settled)} of ${num(plan.notes.length)} notes accounted for.\nReceipt: ${api.origin}/import/receipt/${jobId}`);

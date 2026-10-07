@@ -22,12 +22,12 @@ function fake(handler) {
 }
 const api = (fetchImpl, app = 'https://kosko.app') => createImportApi({ app, token: TOKEN, fetch: fetchImpl });
 
-test('the route list is exactly the import token allowlist (lib/bearer-scope.js IMPORT_BEARER_ROUTES, 12)', () => {
+test('the route list is exactly the import token allowlist (lib/bearer-scope.js IMPORT_BEARER_ROUTES, 13)', () => {
   assert.deepEqual(IMPORT_ROUTES.map((r) => `${r.method} ${r.route}`), [
     'GET /api/import/jobs', 'POST /api/import/jobs', 'DELETE /api/import/jobs', 'PATCH /api/import/jobs/[id]',
     'GET /api/import/jobs/[id]/receipt', 'GET /api/import/allowance', 'POST /api/import/notebooks',
     'POST /api/import/note-ids', 'POST /api/import/notes/batch', 'POST /api/import/attachments/batch',
-    'POST /api/import/refusals', 'POST /api/import/tags'
+    'POST /api/import/refusals', 'POST /api/import/tags', 'POST /api/import/ocr/batch'
   ]);
   assert.ok(Object.isFrozen(IMPORT_ROUTES));
 });
