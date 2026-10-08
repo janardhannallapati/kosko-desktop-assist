@@ -8,3 +8,7 @@ export { fingerprintNote, assignFingerprints, FINGERPRINT_SCHEME } from '../fing
 // 0.2.1 (Kosko 467): the MIME sets, so the desktop tool decides an attachment exactly as /import does without
 // loading the editor schema. The same Set objects the root entry exports.
 export { STORABLE_MIME, NOTE_UPLOADABLE_MIME, CONVERTED_MIME } from '../leaves/note-mime.js';
+// 0.3.0 (Kosko 510): the canonical ENML a version is computed over, and the GUID an Evernote note link names. Both
+// leaves import nothing, so the boundary holds.
+export { canonicalEnml } from '../canonical-enml.js';
+export { parseEvernoteNoteLink } from '../leaves/note-link-schemes.js';

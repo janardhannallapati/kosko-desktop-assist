@@ -17,5 +17,6 @@ export {
 export { TEXT_COLOURS, canonicalTextColour, themeTextColourCss, NOT_IN_PALETTE, selectedTextSwatch } from './leaves/note-colours.js';
 export { NOTE_PALETTE } from './leaves/note-palette.js';
 export { sanitiseStyleValue, styleDeclaration } from './leaves/css-style-value.js';
-export { isAppLinkScheme, isAllowedNoteLink } from './leaves/note-link-schemes.js';
+export { isAppLinkScheme, isAllowedNoteLink, parseEvernoteNoteLink } from './leaves/note-link-schemes.js';
+export { canonicalEnml } from './canonical-enml.js';
 export { STORABLE_MIME, NOTE_UPLOADABLE_MIME, CONVERTED_MIME } from './leaves/note-mime.js';

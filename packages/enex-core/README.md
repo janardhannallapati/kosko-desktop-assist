@@ -7,6 +7,9 @@ The part of [Kosko](https://kosko.app) that has to give the same answer everywhe
   reports any text it could not keep.
 - **`fingerprintNote(note)` / `assignFingerprints(notes)`** compute the `fp1` key that identifies an Evernote
   note across exports, since ENEX carries no note id.
+  Since 0.3.0 a note's version is computed over **canonical ENML** (`canonicalEnml`), so the same unchanged note has
+  one version whether it came from an ENEX export or Evernote's MCP server.
+- **`parseEvernoteNoteLink(href)`** (0.3.0) returns the note GUID an `evernote:///view/…` link names, or `null`.
 - **`NOTE_SCHEMA_EXTENSIONS` / `noteSchema()`** are the note schema the converter targets. A Tiptap schema is an
   allowlist: anything it does not name is deleted. So the converter and the editor must share one.
 
@@ -27,7 +30,8 @@ const { identity, version } = await fingerprintNote({ created, title, content: e
 
 Without the editor schema, `@kosko-app/enex-core/enex` reads ENEX (`readEnex`), formats dates (`formatEnexDate`), keys
 notes (`fingerprintNote`, `assignFingerprints`) and, since 0.2.1, holds the MIME sets (`STORABLE_MIME`,
-`NOTE_UPLOADABLE_MIME`, `CONVERTED_MIME`). It needs no Tiptap peer.
+`NOTE_UPLOADABLE_MIME`, `CONVERTED_MIME`), and since 0.3.0 `canonicalEnml` and `parseEvernoteNoteLink`. It
+needs no Tiptap peer.
 
 `window` is always an argument. In a browser, pass the page's own `window`; in Node, pass any DOM
 implementation's. The package never touches a global DOM, makes no network call and reads no environment.
