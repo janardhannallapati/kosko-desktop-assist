@@ -1,6 +1,6 @@
 {
   "name": "@kosko-app/enex-core",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Kosko's ENEX reader, ENML-to-Tiptap converter, fp1 Evernote note fingerprint and the note schema they need. One copy, shared by Kosko and kosko-desktop-assist.",
   "type": "module",
   "license": "Apache-2.0",

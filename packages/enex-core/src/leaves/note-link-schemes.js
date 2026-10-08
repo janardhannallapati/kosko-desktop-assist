@@ -26,3 +26,17 @@ export function isAppLinkScheme(href) {
 export function isAllowedNoteLink(url, ctx) {
   return ctx.defaultValidate(url) || isAppLinkScheme(url);
 }
+
+// Kosko 510 / 514 — the note GUID an Evernote note link names, lower-cased, or null. Only the internal
+// `evernote:///view/<user>/<shard>/<guid>/<guid>/` form; its two GUIDs are the same note, and a link whose two differ
+// is not one we can trust to mean either. A web share link (https://www.evernote.com/…) is left alone: it works.
+const GUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const NOTE_LINK = new RegExp(`^evernote:///view/[^/]+/[^/]+/(${GUID})/(${GUID})/?$`, 'i');
+
+export function parseEvernoteNoteLink(href) {
+  if (typeof href !== 'string') return null;
+  const m = NOTE_LINK.exec(href.trim());
+  if (!m) return null;
+  const [a, b] = [m[1].toLowerCase(), m[2].toLowerCase()];
+  return a === b ? a : null;
+}

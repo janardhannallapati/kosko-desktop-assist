@@ -19,7 +19,15 @@ describe('fingerprintNote', () => {
     const { identity, version } = await fingerprintNote(note());
     expect(FINGERPRINT_SCHEME).toBe('fp1');
     expect(identity).toBe(sha('fp1\ncreated:20200101T101010Z'));
-    expect(version).toBe(sha(JSON.stringify(['v1', 'Groceries', '<en-note>milk</en-note>', ['home', 'weekly'], ['aa'.repeat(16), 'bb'.repeat(16)]])));
+    expect(version).toBe(sha(JSON.stringify(['v2', 'Groceries', '<en-note>milk</en-note>', ['home', 'weekly'], ['aa'.repeat(16), 'bb'.repeat(16)]])));
+  });
+
+  // Kosko 510: v2 hashes canonical ENML, so the same note from Evernote's MCP server and from an ENEX export has one
+  // version (461 R5), and a crossing between routes is never read as an edit.
+  it('version is the same for an ENEX body and its MCP twin (canonical ENML, v2)', async () => {
+    const enex = '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE en-note SYSTEM "http://xml.evernote.com/pub/enml2.dtd">\n'
+      + '<en-note>milk<div style="display:none;--en-chs:e30=">\u200A</div></en-note>\n';
+    expect((await fingerprintNote(note({ content: enex }))).version).toBe((await fingerprintNote(note())).version);
   });
 
   it('identity ignores everything an Evernote edit changes', async () => {
@@ -64,7 +72,7 @@ describe('fingerprintNote', () => {
 
   it('non-ASCII text is hashed as UTF-8', async () => {
     const { version } = await fingerprintNote(note({ title: 'తెలుగు 😀', tags: [], resources: [] }));
-    expect(version).toBe(sha(JSON.stringify(['v1', 'తెలుగు 😀', '<en-note>milk</en-note>', [], []])));
+    expect(version).toBe(sha(JSON.stringify(['v2', 'తెలుగు 😀', '<en-note>milk</en-note>', [], []])));
   });
 });
 
