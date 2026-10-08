@@ -16,8 +16,12 @@
 // - Free plan: NOT RECORDED (ADR-0007: "refused on a free account"; no shape was kept). `freePlan` models the three
 //   plausible places: 'http403' (the MCP endpoint refuses a signed-in bearer), 'rpc' (initialize answers a JSON-RPC
 //   error naming the plan) and 'tool' (a tool call answers isError naming the plan). W7 records the real one.
+//   'http403bare' is NOT a free plan: a 403 whose body names no plan, which the tool must stop on (review T4).
 // - A note listed but missing (`missing`: get_note answers isError "not found") and listed notes the plan does not
 //   hold (`extra`).
+// - 513: get_attachment's signed URL, 300 s, no auth header (461). `staleUrls` answers that many URLs already expired;
+//   `forbidDownloads` answers that many downloads 403, as an expired signature does. Every download is recorded with
+//   whether it carried an Authorization header (`state.downloads`).
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -33,13 +37,13 @@ const iso = (ms) => new Date(ms).toISOString(); // 24 characters, ms precision, 
  * files: Map md5 -> Uint8Array, served by get_attachment's signed URL.
  */
 export function createFakeMcp({ notes = [], files = new Map(), extra = [], missing = [], freePlan = null, limitOn = [],
-  sse = false, accessTtl = 3600, origin = 'https://mcp.evernote.test', now = Date.now, omitTools = [] } = {}) {
+  sse = false, accessTtl = 3600, origin = 'https://mcp.evernote.test', now = Date.now, omitTools = [], staleUrls = 0, forbidDownloads = 0 } = {}) {
   const state = {
     notes: new Map(notes.map((n) => [n.guid, n])), files, extra: [...extra], missing: new Set(missing), freePlan,
     limitOn: new Set(limitOn), sse,
     clients: new Map(), codes: new Map(), access: new Map(), refresh: new Set(), sessions: new Set(),
     authorizations: 0, tokenGrants: { authorization_code: 0, refresh_token: 0 }, unauthorized: 0,
-    calls: [], getNoteCalls: 0, rpc: []
+    calls: [], getNoteCalls: 0, rpc: [], staleUrls, forbidDownloads, downloads: []
   };
   const fake = { state, origin };
 
@@ -52,7 +56,7 @@ export function createFakeMcp({ notes = [], files = new Map(), extra = [], missi
   const toolError = (text) => ({ content: [{ type: 'text', text }], isError: true });
 
   function callTool(name, args = {}) {
-    state.calls.push({ tool: name, at: now(), noteId: args?.noteId ?? null });
+    state.calls.push({ tool: name, at: now(), noteId: args?.noteId ?? null, hash: args?.hash ?? null });
     if (state.freePlan === 'tool') return toolError('MCP access requires an Evernote Personal or Professional plan. Upgrade to continue.');
     if (name === 'search_notes') {
       const all = listing();
@@ -75,7 +79,7 @@ export function createFakeMcp({ notes = [], files = new Map(), extra = [], missi
     if (name === 'get_attachment') {
       const n = state.notes.get(args.noteId);
       if (!n || !(n.resources ?? []).some((r) => r.hash === args.hash)) return toolError('Attachment not found');
-      const exp = now() + 300_000;
+      const exp = state.staleUrls > 0 ? (state.staleUrls--, now() - 1000) : now() + 300_000;
       const sig = createHash('sha256').update(`${args.hash}|${exp}`).digest('hex').slice(0, 16);
       return toolResult({ url: `${fake.origin}/files/${args.hash}?exp=${exp}&sig=${sig}`, expiresAt: iso(exp) });
     }
@@ -153,6 +157,8 @@ export function createFakeMcp({ notes = [], files = new Map(), extra = [], missi
       const hash = path.slice('/files/'.length);
       const exp = Number(u.searchParams.get('exp'));
       const sig = createHash('sha256').update(`${hash}|${exp}`).digest('hex').slice(0, 16);
+      state.downloads.push({ hash, at: now(), auth: req.headers.has('authorization') });
+      if (state.forbidDownloads > 0) { state.forbidDownloads -= 1; return new Response(null, { status: 403 }); }
       if (u.searchParams.get('sig') !== sig || now() > exp || !state.files.has(hash)) return new Response(null, { status: 403 });
       return new Response(state.files.get(hash), { status: 200, headers: { 'content-type': 'application/octet-stream' } });
     }
@@ -164,6 +170,8 @@ export function createFakeMcp({ notes = [], files = new Map(), extra = [], missi
         return json(401, { error: 'invalid_token' }, { 'www-authenticate': `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"` });
       }
       if (state.freePlan === 'http403') return json(403, { error: 'insufficient_plan', error_description: 'MCP access requires a paid Evernote plan.' });
+      // Review T4: a 403 that names no plan (a revoked grant, a blocked client). Not a free plan: the run must stop.
+      if (state.freePlan === 'http403bare') return json(403, { error: 'forbidden' });
       const msg = await req.json();
       if (msg.id == null) return new Response(null, { status: 202 });
       const answer = { jsonrpc: '2.0', id: msg.id, ...(await rpc(msg)) };
@@ -182,6 +190,11 @@ export function createFakeMcp({ notes = [], files = new Map(), extra = [], missi
     if (u.origin !== new URL(fake.origin).origin) throw new TypeError(`fetch failed: ${u.origin} is not the fake`);
     return handle(new Request(u, { method: init.method ?? 'GET', headers: init.headers, body: init.body, redirect: 'manual' }));
   };
+  /**
+   * The signed-URL rule a test injects (evernote.signedUrlOk): this fake's own origin, read at call time (after
+   * listen() it is http://127.0.0.1:<port>). Production pins https on evernote.com (src/mcp/evernote.mjs isSignedUrl).
+   */
+  fake.signedUrlOk = (url) => { try { return new URL(url).origin === new URL(fake.origin).origin; } catch { return false; } };
   /** Every access token issued so far stops working: the next MCP call answers 401, as an expired token does. */
   fake.expireAccess = () => { for (const t of state.access.values()) t.expired = true; };
   /** Real HTTP on 127.0.0.1:<random port>; `origin` becomes that address. Returns a close function. */

@@ -38,8 +38,8 @@ test('run 1 plain, run 2 --evernote: every listed note is upgraded IN PLACE — 
   const top = active.content.content.map((n) => n.type);
   assert.ok(top.indexOf('noteImage') > top.indexOf('table'));
   assert.match(active.content.content[top.indexOf('noteImage')].attrs.path, new RegExp(`^notes/${active.id}/images/${HASH.present}\\.png$`));
-  assert.deepEqual(job.summary.bodies, { formatted: 3, plain: 0, notListed: 1, missing: 0, unconvertible: 0, koskoRefused: 0 });
-  assert.deepEqual({ ...job.summary.evernote }, { listed: 3, planNotListed: 1, listedNotInPlan: 0, limits: 0, refreshes: 0 });
+  assert.deepEqual(job.summary.bodies, { formatted: 3, plain: 0, notListed: 1, missing: 0, unconvertible: 0, koskoRefused: 0, unreachable: 0 });
+  assert.deepEqual({ ...job.summary.evernote }, { listed: 3, planNotListed: 1, listedNotInPlan: 0, limits: 0, refreshes: 0, formattedRefused: 0 });
   // 504's image text still adds up on the upgraded notes: their scans keep their md5 keys.
   const d = job.receipt.desktop;
   assert.deepEqual([d.ocrWords, d.ocrEmpty, d.ocrUnreadable, d.ocrNotSent, d.ocrRefused], [3, 2, 1, 0, 0]);
@@ -128,7 +128,7 @@ test('the listing check: planned-but-unlisted and listed-but-unplanned notes are
   const job = s.kosko.job(r.jobId);
   assert.equal(job.summary.evernote.planNotListed, 2); // nSpace + the Odd id note
   assert.equal(job.summary.evernote.listedNotInPlan, 2);
-  assert.deepEqual(job.summary.bodies, { formatted: 1, plain: 0, notListed: 2, missing: 1, unconvertible: 0, koskoRefused: 0 });
+  assert.deepEqual(job.summary.bodies, { formatted: 1, plain: 0, notListed: 2, missing: 1, unconvertible: 0, koskoRefused: 0, unreachable: 0 });
   const listing = JSON.parse(readFileSync(join(s.planPath, '..', LISTING_NAME), 'utf8'));
   assert.deepEqual(listing.listedNotInPlan.sort(), extra);
   assert.ok(listing.planNotListed.includes(ID.nSpace));
@@ -234,6 +234,7 @@ test('a formatted body Kosko refuses: a new note is sent again as plain text; a 
   const job = s2.kosko.job(r.jobId);
   assert.deepEqual(job.summary.notes, { created: 0, updated: 2, skipped: 2, not_imported: 0 });
   assert.equal(job.summary.skip_reasons.changed_in_evernote, 1);
+  assert.equal(job.summary.evernote.formattedRefused, 1, 'the tool-side reason (review T8)');
   assert.equal(s2.kosko.state.refusals.length, 0, 'no refusal is recorded over a note Kosko holds');
 });
 
@@ -244,4 +245,24 @@ test('ENML the converter refuses (an entity declaration) keeps the plain text an
   assert.equal(r.exitCode, 0, r.out);
   assert.equal(s.kosko.job(r.jobId).summary.bodies.unconvertible, 1);
   assert.equal(s.kosko.job(r.jobId).summary.bodies.formatted, 2);
+});
+
+test('review T8/T11: Kosko refuses a held note\'s upgrade as would_drop_media — settled formatted_refused (Kosko hears changed_in_evernote), the run goes on', async () => {
+  const s = await setup();
+  await send(s, { evernote: false });
+  const active = byGuid(s, ID.nActive);
+  // Kosko holds one more key under the note than the formatted body names: 511 rule 5 refuses the update.
+  s.kosko.holdKey(active.id, `notes/${active.id}/images/${'e'.repeat(32)}.png`);
+  const r = await send(s);
+  assert.equal(r.exitCode, 0, r.out);
+  assert.equal(s.kosko.state.dropRefusals, 1, 'the fake refused it with the real per-note code');
+  const job = s.kosko.job(r.jobId);
+  assert.deepEqual(job.summary.notes, { created: 0, updated: 2, skipped: 2, not_imported: 0 }, 'the other notes are upgraded');
+  assert.equal(JSON.parse(readFileSync(checkpointPath(s.planPath), 'utf8')).notes[ID.nActive], 'skipped:formatted_refused');
+  assert.equal(job.summary.evernote.formattedRefused, 1);
+  assert.equal(job.summary.bodies.koskoRefused, 1);
+  assert.deepEqual(job.summary.skip_reasons, { changed_in_evernote: 1 }, 'Kosko\'s closed reason set');
+  assert.ok(job.receipt.notes.some((n) => n.title === 'Active note' && n.reason === 'changed_in_evernote'));
+  assert.equal(s.kosko.state.refusals.length, 0, 'no refusal recorded over a note Kosko holds');
+  assert.deepEqual(byGuid(s, ID.nActive).content.content[0], { type: 'paragraph', content: [{ type: 'text', text: 'hello world' }] }, 'its plain text stays');
 });

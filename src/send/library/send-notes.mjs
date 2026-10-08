@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { SendStopped } from '../errors.mjs';
 import { plainTextDoc, mediaNode, buildRecord } from './note-record.mjs';
 import { readCachedBytes } from './attachments.mjs';
+import { AttachmentMissing } from '../../mcp/evernote.mjs';
 import { placeMedia } from './formatted-body.mjs';
 
 const MINT_MAX = 100; // attachments/batch (432)
@@ -16,8 +17,9 @@ const NOTE_REASON = { invalid: 'parse_error', note_too_large: 'note_too_large', 
 const OUTCOMES = new Set(['created', 'updated', 'skipped']); // 511: `updated`, a matched note upgraded in place
 // 504 known issue, fixed in 512: note-ids must answer every note asked about with one of these states, or the run stops.
 const ID_STATES = new Set(['new', 'here', 'trash', 'deleted', 'clash']);
-// A formatted body Kosko refused (511 rule 5's would_drop_media reaches the batch as `invalid`, Kosko 512): a new note
-// is sent again as plain text; a note already there keeps its plain text and is named `changed_in_evernote`.
+// A formatted body Kosko refused: since 511 r8b the batch names 511 rule 5's refusal `would_drop_media` (Kosko 512);
+// `invalid` stays in the set for a Kosko from before that. A new note is sent again as plain text; a note already there
+// keeps its plain text and is settled `skipped`/`formatted_refused` (review T8; Kosko's receipt hears changed_in_evernote).
 const FORMATTED_REFUSALS = new Set(['invalid', 'would_drop_media', 'note_too_large', 'batch_too_large']);
 const badAnswer = () => new SendStopped('bad_answer', 'Kosko answered note-ids in a way this tool does not understand, so the '
   + 'import stopped. Nothing already sent is lost; run the assist again to continue.');
@@ -68,7 +70,16 @@ export function createNoteSender({ api, sender, lanes, jobId, resourceCacheDir, 
       while (!stopped && next < uploads.length) {
         const u = uploads[next++];
         let bytes;
-        try { bytes = readCachedBytes(resourceCacheDir, u.a); } catch { bytes = null; }
+        if (u.d.source === 'evernote') {
+          // 513: a file this computer never had, fetched from Evernote only now that Kosko asked for its bytes.
+          try { bytes = await bodies.fetchFile(u.x, u.a); } catch (e) {
+            if (!(e instanceof AttachmentMissing)) { stopped = true; throw e; }
+            u.x.paths.delete(u.a.dataHash); u.x.failed.set(u.a.dataHash, ['missing_from_cache', 'placeholder']);
+            continue;
+          }
+        } else {
+          try { bytes = readCachedBytes(resourceCacheDir, u.a); } catch { bytes = null; }
+        }
         // Unreadable now, or not the size the plan recorded (the file changed since the dry run): never PUT (review M3).
         if (!bytes || bytes.length !== u.a.size) { u.x.paths.delete(u.a.dataHash); u.x.failed.set(u.a.dataHash, ['unreadable', 'unreadable']); continue; }
         try {
@@ -116,19 +127,27 @@ export function createNoteSender({ api, sender, lanes, jobId, resourceCacheDir, 
     return x.update ? { ...record, update: true } : record; // 511: opt in to the update path
   }
 
-  /** Every note of the batch is settled when this returns, or a SendStopped is thrown. */
-  return async function sendBatch(batch) {
-    const ask = await sender.call(() => api.noteIds({ fingerprints: batch.map((x) => x.fp),
-      external_ids: batch.map((x) => (GUID_RE.test(String(x.note.id)) ? x.note.id : null)) }));
-    // 504's known issue (512): silence about a note, or an answer that is not one, stops the run. It is never "new":
-    // a note Kosko holds, read as new, would be sent again under a fresh id.
+  /**
+   * note-ids for [{ fp, guid }], checked. 504's known issue (512): silence about a note, or an answer that is not one,
+   * stops the run. It is never "new": a note Kosko holds, read as new, would be sent again under a fresh id. Also asked
+   * by 514 for the notes a batch's links name.
+   */
+  async function askIds(entries) {
+    const ask = await sender.call(() => api.noteIds({ fingerprints: entries.map((e) => e.fp),
+      external_ids: entries.map((e) => (GUID_RE.test(String(e.guid)) ? e.guid : null)) }));
     const ids = ask?.ids;
     if (!ids || typeof ids !== 'object' || Array.isArray(ids)) throw badAnswer();
-    for (const x of batch) {
-      const st = Object.hasOwn(ids, x.fp) ? ids[x.fp] : null;
+    for (const { fp } of entries) {
+      const st = Object.hasOwn(ids, fp) ? ids[fp] : null;
       if (!ID_STATES.has(st?.state) || (st.state === 'here' && !UUID_RE.test(String(st.id)))
         || (st.state === 'new' && st.id != null && !UUID_RE.test(String(st.id)))) throw badAnswer();
     }
+    return ids;
+  }
+
+  /** Every note of the batch is settled when this returns, or a SendStopped is thrown. */
+  return async function sendBatch(batch) {
+    const ids = await askIds(batch.map((x) => ({ fp: x.fp, guid: x.note.id })));
     let queue = [];
     for (const x of batch) {
       const st = ids[x.fp];
@@ -141,11 +160,14 @@ export function createNoteSender({ api, sender, lanes, jobId, resourceCacheDir, 
       if (bodies) await bodies.prepare(x, st);
       queue.push(x);
     }
+    // 514: every formatted body's links, resolved before any note of the batch is written.
+    if (bodies?.resolveLinks) await bodies.resolveLinks(queue, ids, askIds);
     while (queue.length) {
       await mintAndUpload(queue);
       for (const x of queue.filter((q) => q.quota)) await refuse(x, 'quota_exceeded');
       queue = queue.filter((q) => !q.quota);
       if (!queue.length) break;
+      if (bodies?.finalize) for (const x of queue) await bodies.finalize(x);
       const res = await sender.call(() => api.notesBatch({ job_id: jobId, notes: queue.map(recordOf) }));
       const again = [];
       const answered = new Map((res.results ?? []).filter((r) => Number.isInteger(r?.index) && queue[r.index]).map((r) => [r.index, r]));
@@ -159,8 +181,8 @@ export function createNoteSender({ api, sender, lanes, jobId, resourceCacheDir, 
         }
         const code = r.error?.code ?? 'retry';
         if (x.converted && FORMATTED_REFUSALS.has(code)) {
-          if (x.update) { x.bodyState = 'plain:kosko_refused'; settle(x, 'skipped', 'changed_in_evernote'); continue; }
-          Object.assign(x, { converted: null, version: x.plainVersion, bodyState: 'plain:kosko_refused' });
+          if (x.update) { x.bodyState = 'plain:kosko_refused'; settle(x, 'skipped', 'formatted_refused'); continue; }
+          Object.assign(x, { converted: null, links: null, version: x.plainVersion, bodyState: 'plain:kosko_refused' });
           again.push(x);
           continue;
         }

@@ -54,8 +54,8 @@ export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
   function job(id) { return state.jobs.find((j) => j.id === id); }
 
   // Kosko 511 rule 2, in its order: deleted, trash, same version, no flag, no baseline, edited in Kosko, unchanged,
-  // then the update in place (same id, title and body, tags only added; would_drop_media refused). The batch route
-  // reports every 22023 as `invalid` (Kosko 512: only the single-note route can name would_drop_media).
+  // then the update in place (same id, title and body, tags only added; would_drop_media refused). Since 511 r8b the
+  // batch route names that refusal `would_drop_media` per note (Kosko 512's noteRefusalCode); any other 22023 is `invalid`.
   function matched(e, r, index) {
     const skip = (reason) => ({ index, outcome: 'skipped', node_id: e.nodeId, reason });
     const node = state.notes.get(e.nodeId);
@@ -67,8 +67,9 @@ export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
     if (bodyHash(node.title, node.content) !== e.writtenHash) return skip('edited_in_kosko');
     if (bodyHash(r.title, r.content) === e.writtenHash) { e.version = r.version_hash; return skip('unchanged'); }
     if (r.id && r.id !== e.nodeId) return { index, error: { code: 'invalid' } };
+    // 511 rule 5: only this note's real keys (notes/<id>/…) must survive; a placeholder may become its stored file (513).
     const incoming = mediaPaths(r.content);
-    if (![...mediaPaths(node.content)].every((p) => incoming.has(p))) { state.dropRefusals += 1; return { index, error: { code: 'invalid' } }; }
+    if (![...mediaPaths(node.content)].filter((p) => p.startsWith(`notes/${e.nodeId}/`)).every((p) => incoming.has(p))) { state.dropRefusals += 1; return { index, error: { code: 'would_drop_media' } }; }
     if (!ownMedia({ ...r, id: e.nodeId })) return { index, error: { code: 'invalid' } };
     state.versions.push({ nodeId: e.nodeId, content: node.content });
     Object.assign(node, { title: r.title, content: r.content, updated_at: r.updated_at, tags: [...new Set([...(node.tags ?? []), ...(r.tags ?? [])])] });
@@ -252,7 +253,16 @@ export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
     if (title !== undefined) n.title = title;
     if (content !== undefined) n.content = content;
   };
-  const fake = { fetch, state, token: null, job, editNote };
+  /**
+   * A key the note holds that a new body might not name (as an import that stored one more file would leave it): the
+   * node gains a media node, and the ledger's written hash follows, so it is not read as an edit in Kosko.
+   */
+  const holdKey = (nodeId, path) => {
+    const n = state.notes.get(nodeId);
+    n.content = { ...n.content, content: [...n.content.content, { type: 'noteImage', attrs: { path } }] };
+    for (const e of state.ledgerByFp.values()) if (e.nodeId === nodeId) e.writtenHash = bodyHash(n.title, n.content);
+  };
+  const fake = { fetch, state, token: null, job, editNote, holdKey };
   return fake;
 }
 

@@ -17,7 +17,8 @@ import { decideAttachment } from './attachments.mjs';
 import { createTally, emptyAttachmentCounts } from './tally.mjs';
 import { createNoteSender } from './send-notes.mjs';
 import { createOcrSender, ocrCounts } from './send-ocr.mjs';
-import { prepareEvernote, createBodyPreparer, bodyCounts, FREE_PLAN_SENTENCE } from './evernote-route.mjs';
+import { createLinkLedger } from './note-links.mjs';
+import { prepareEvernote, createBodyPreparer, bodyCounts, fileCounts, FREE_PLAN_SENTENCE } from './evernote-route.mjs';
 
 const BATCH_NOTES = 25; // Kosko 434 r1: 25 notes or 3.5 MB of JSON per batch
 const BATCH_BYTES = 3.5 * 1024 * 1024;
@@ -60,8 +61,10 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
   let mcp = null;
   if (evernote) {
     try {
-      mcp = await prepareEvernote({ plan, planPath, evernote, log });
+      mcp = await prepareEvernote({ plan, planPath, evernote, log, signal });
     } catch (e) {
+      // Ctrl-C during the sign-in or the listing: stopped, nothing sent (review T2).
+      if (e instanceof SendStopped && e.code === 'aborted') { log(e.message); return { exitCode: 130 }; }
       log(redact(`Evernote's formatted notes could not be reached, so nothing was sent: ${e.message}`));
       return { exitCode: 1 };
     }
@@ -142,18 +145,27 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
     const settle = (x, outcome, reason) => {
       x.outcome = outcome;
       const counts = emptyAttachmentCounts();
+      const missingFiles = [];
+      // 513: a file fetched from Evernote for a note Kosko did not rewrite (kept for a Kosko edit, or refused) is not in
+      // that note; it is still missing there. `unchanged` (and the same version) means the note already holds it.
+      const notTaken = outcome === 'skipped' && reason && reason !== 'unchanged';
       for (const { a, d } of x.atts) {
         // Settled in this run: its own verdict. Settled by the run that stopped: what that run recorded (review H2).
-        const bucket = x.resumed && typeof cp.attachments[a.id] === 'string' ? cp.attachments[a.id]
+        let bucket = x.resumed && typeof cp.attachments[a.id] === 'string' ? cp.attachments[a.id]
           : d.upload ? (x.failed?.get(a.dataHash)?.[1] ?? (x.refusedTypes?.has(a.dataHash) ? 'type_not_stored' : 'stored')) : d.count;
+        if (!x.resumed && d.source === 'evernote' && notTaken) bucket = 'placeholder';
         counts[bucket] += 1;
         cp.attachments[a.id] = outcome === 'not_imported' ? 'not_imported_with_note' : bucket;
+        // Only a missing_from_cache placeholder lands in `placeholder`: a file not on this computer, named (465 rule 10).
+        if (bucket === 'placeholder') missingFiles.push(a.filename);
       }
       tally.settle(x.key, { outcome, reason, title: x.note.title, notebook: nbName.get(x.parentKey) ?? '', tagCount: x.tags.length,
-        attachmentRows: x.atts.length, counts, missingFiles: x.atts.filter(({ d }) => d.missing === 'missing_from_cache').map(({ a }) => a.filename) });
+        attachmentRows: x.atts.length, counts, missingFiles });
+      if (links && !x.resumed) links.settled(x, outcome, { title: x.note.title || 'Untitled note', notebook: nbName.get(x.parentKey) ?? '' });
       cp.notes[x.key] = reason ? `${outcome}:${reason}` : outcome;
       if (route === 'evernote') cp.bodies[x.key] = x.resumed ? (cp.bodies[x.key] ?? 'plain') : (x.bodyState ?? 'plain');
     };
+    const links = route === 'evernote' ? createLinkLedger({ plan, fps, cp }) : null; // 514; cp.links survives a stop (T6)
     const resumed = [];
     for (const x of info) {
       if (!Object.hasOwn(cp.notes, x.key)) continue;
@@ -162,7 +174,7 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
       settle(y, o, r ?? null);
       resumed.push(y);
     }
-    const bodies = route === 'evernote' ? await createBodyPreparer({ mcp }) : null;
+    const bodies = route === 'evernote' ? await createBodyPreparer({ mcp, allowance, links }) : null;
     const sendBatch = createNoteSender({ api, sender, lanes, jobId, resourceCacheDir, cp, settle, bodies });
     // 504: image text goes after its notes settle. Notes the stopped run settled get theirs first (their ids are asked
     // for again); records already in the checkpoint are never sent twice.
@@ -188,16 +200,29 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
 
     const { notes, settled } = tally.counts();
     const allSettled = settled === plan.notes.length;
-    const { summary, receipt } = tally.build({ expected, structure, trashedNotes: plan.counts.trashedNotes, ocr: ocrCounts(cp.ocr) });
+    const linkReport = links?.report();
+    const { summary, receipt } = tally.build({ expected, structure, trashedNotes: plan.counts.trashedNotes, ocr: ocrCounts(cp.ocr),
+      links: linkReport?.receipt });
     // 512: counts only (Kosko's summary takes counts; its receipt's desktop block has no place for these yet).
     if (mcp?.freePlan) summary.evernote = { freePlan: 1 };
     else if (mcp) {
+      // T8: a formatted upgrade Kosko refused is `formatted_refused` here; Kosko's closed reason set hears changed_in_evernote.
+      const formattedRefused = Object.values(cp.notes).filter((v) => v === 'skipped:formatted_refused').length;
       summary.evernote = { listed: mcp.listed.length, planNotListed: mcp.planNotListed.length, listedNotInPlan: mcp.listedNotInPlan.length,
-        limits: mcp.stats.limits, refreshes: mcp.stats.refreshes };
+        limits: mcp.stats.limits, refreshes: mcp.stats.refreshes, formattedRefused };
       summary.bodies = bodyCounts(cp.bodies, plan.notes);
+      summary.evernoteFiles = fileCounts(cp.attachments, plan.attachments, bodies.files);
+      summary.links = linkReport.counts;
+      links.write(planPath, log); // best effort (T5): a failed write is one line, never a stopped job
     }
     await sender.call(() => api.finishJob(jobId, { status: allSettled ? 'complete' : 'failed', summary, receipt }));
-    if (route === 'evernote') log(`Formatted: ${num(summary.bodies.formatted)} of ${num(plan.notes.length)} notes.`);
+    if (route === 'evernote') {
+      log(`Formatted: ${num(summary.bodies.formatted)} of ${num(plan.notes.length)} notes.`);
+      const f = summary.evernoteFiles;
+      if (f.fetched || f.stillMissing) log(`Files missing from this computer: ${num(f.fetched)} fetched from Evernote, ${num(f.stillMissing)} still missing.`);
+      const l = summary.links;
+      if (l.rewritten || l.left) log(`Links between notes: ${num(l.rewritten)} now open in Kosko, ${num(l.left)} kept as Evernote links.`);
+    }
     log(`Done: ${num(notes.created)} created, ${num(notes.updated)} updated, ${num(notes.skipped)} already in Kosko, ${num(notes.not_imported)} not imported — `
       + `${num(settled)} of ${num(plan.notes.length)} notes accounted for.\nReceipt: ${api.origin}/import/receipt/${jobId}`);
     return { exitCode: allSettled ? 0 : 1, jobId, summary, receipt };

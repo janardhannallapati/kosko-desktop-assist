@@ -12,14 +12,19 @@ const FORMAT = 'kosko-send-checkpoint';
 // Version 2 (504) adds `ocr`: Evernote attachment id → the bucket its image-text record settled in.
 // Version 3 (512) adds `route` (plain | evernote: the run fetched formatted bodies from Evernote's MCP server) and
 // `bodies`: Evernote note GUID → the body its settled note was sent with (BODY_RE), so a resumed run counts it as the
-// run that settled it did and never fetches a settled note's body again.
+// run that settled it did and never fetches a settled note's body again. It also holds `links` (514, review T6): note
+// GUID → that written note's link outcomes { rewritten, left: { reason: n }, pending: [[target GUID, Kosko id]] }, so a
+// resumed run counts the links the stopped run wrote. Counts, GUIDs and ids only — never a link's text.
 const VERSION = 3;
-const KEYS = ['format', 'version', 'plan', 'app', 'route', 'jobId', 'notebooks', 'tags', 'notes', 'attachments', 'ocr', 'bodies', 'updatedAt'];
+const KEYS = ['format', 'version', 'plan', 'app', 'route', 'jobId', 'notebooks', 'tags', 'notes', 'attachments', 'ocr', 'bodies', 'links', 'updatedAt'];
 export const ROUTES = Object.freeze(['plain', 'evernote']);
 // formatted: the ENML from get_note, converted. plain: the plain text (W2's body), with why when the run wanted a
 // formatted one — the note was not listed by Evernote, get_note had no body for it, the converter refused it, or Kosko
 // refused the formatted body.
-const BODY_RE = /^(formatted|plain(:(not_listed|missing|unconvertible|kosko_refused))?)$/;
+// unreachable (review T3): get_note failed transiently past its retries, so the note kept W2's plain text.
+const BODY_RE = /^(formatted|plain(:(not_listed|missing|unconvertible|kosko_refused|unreachable))?)$/;
+const LINK_REASONS = new Set(['not_in_plan', 'in_kosko_trash', 'deleted_in_kosko', 'clash', 'no_stable_id', 'target_not_written']);
+const MAX_PENDING = 10_000;
 // A settled note: its outcome, and (467) the reason a resumed run's receipt must still name — `skipped:changed_in_evernote`,
 // `not_imported:id_clash`. The reason is a Kosko reason code (lib/enex/receipt-reasons.js shape).
 const OUTCOME_RE = /^(created|updated|skipped|not_imported)(:[a-z_]{1,40})?$/; // 511/512: `updated`
@@ -45,11 +50,16 @@ export function planFingerprint(planPath) {
 }
 
 export const emptyCheckpoint = ({ plan, app, jobId = null, route = 'plain' }) =>
-  ({ format: FORMAT, version: VERSION, plan, app, route, jobId, notebooks: {}, tags: { done: false }, notes: {}, attachments: {}, ocr: {}, bodies: {}, updatedAt: null });
+  ({ format: FORMAT, version: VERSION, plan, app, route, jobId, notebooks: {}, tags: { done: false }, notes: {}, attachments: {}, ocr: {}, bodies: {}, links: {}, updatedAt: null });
 
 const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const sameKeys = (o, keys) => Object.keys(o).length === keys.length && keys.every((k) => Object.hasOwn(o, k));
 const mapOf = (o, valueOk) => isPlain(o) && Object.entries(o).every(([k, v]) => isKey(k) && valueOk(v));
+const isCount = (n) => Number.isInteger(n) && n >= 0;
+const isLinkRecord = (v) => isPlain(v) && sameKeys(v, ['rewritten', 'left', 'pending']) && isCount(v.rewritten)
+  && isPlain(v.left) && Object.entries(v.left).every(([k, n]) => LINK_REASONS.has(k) && isCount(n))
+  && Array.isArray(v.pending) && v.pending.length <= MAX_PENDING
+  && v.pending.every((p) => Array.isArray(p) && p.length === 2 && typeof p[0] === 'string' && isKey(p[0]) && typeof p[1] === 'string' && UUID_RE.test(p[1]));
 
 function isCheckpoint(c) {
   return isPlain(c) && sameKeys(c, KEYS) && c.format === FORMAT && Number.isInteger(c.version)
@@ -59,7 +69,7 @@ function isCheckpoint(c) {
     && isPlain(c.tags) && sameKeys(c.tags, ['done']) && typeof c.tags.done === 'boolean'
     && mapOf(c.notes, (v) => typeof v === 'string' && OUTCOME_RE.test(v)) && mapOf(c.attachments, (v) => v === true || BUCKETS.has(v))
     && mapOf(c.ocr, (v) => typeof v === 'string' && OCR_BUCKET_RE.test(v))
-    && mapOf(c.bodies, (v) => typeof v === 'string' && BODY_RE.test(v))
+    && mapOf(c.bodies, (v) => typeof v === 'string' && BODY_RE.test(v)) && mapOf(c.links, isLinkRecord)
     && (c.updatedAt === null || typeof c.updatedAt === 'string');
 }
 

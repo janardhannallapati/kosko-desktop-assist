@@ -28,11 +28,11 @@ export function clock() {
   return { now: () => c.t, sleep: async (ms) => { c.t += ms; }, c };
 }
 
-export async function setup({ mcp: mcpOpts = {}, notes = LISTED } = {}) {
-  const acct = buildSyntheticAccount();
+export async function setup({ mcp: mcpOpts = {}, notes = LISTED, mutate, kosko: koskoOpts } = {}) {
+  const acct = buildSyntheticAccount({ mutate });
   const outDir = mkdtempSync(join(tmpdir(), 'kda-ev-'));
   await runDryRun({ dataDir: acct.dataDir, outDir, tmpRoot: mkdtempSync(join(tmpdir(), 'kda-snap-')), log: () => {} });
-  const kosko = createFakeKosko();
+  const kosko = createFakeKosko(koskoOpts);
   kosko.token = TOKEN;
   const time = clock();
   const mcp = createFakeMcp({ now: time.now, ...mcpOpts,
@@ -41,12 +41,13 @@ export async function setup({ mcp: mcpOpts = {}, notes = LISTED } = {}) {
   return { acct, planPath: join(outDir, 'kosko-plan.json'), kosko, mcp, time, signIns };
 }
 
-export async function send(s, { evernote = true, mcpFetch, ...extra } = {}) {
+export async function send(s, { evernote = true, mcpFetch, evernoteExtra = {}, ...extra } = {}) {
   const lines = [];
   const fetchMcp = mcpFetch ?? s.mcp.fetch;
   const r = await runSend({ planPath: s.planPath, app: APP, token: TOKEN, dataDir: s.acct.dataDir, fetch: s.kosko.fetch,
     tmpRoot: mkdtempSync(join(tmpdir(), 'kda-snap-')), log: (l) => lines.push(l), sleep: async () => {}, random: () => 0,
-    evernote: evernote ? { origin: s.mcp.origin, fetch: fetchMcp, authorize: autoAuthorize(fetchMcp, s.signIns), sleep: s.time.sleep, now: s.time.now } : null,
+    evernote: evernote ? { origin: s.mcp.origin, fetch: fetchMcp, authorize: autoAuthorize(fetchMcp, s.signIns), sleep: s.time.sleep, now: s.time.now,
+      signedUrlOk: s.mcp.signedUrlOk, ...evernoteExtra } : null,
     ...extra });
   return { ...r, out: lines.join('\n') };
 }

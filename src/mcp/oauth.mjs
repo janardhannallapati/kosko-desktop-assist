@@ -84,9 +84,10 @@ export function judgeCallback(rawUrl, expectedState) {
   return { kind: 'code', code };
 }
 
-// Listens on 127.0.0.1 only, for one valid callback or until the timeout.
-export function waitForCallback({ port, state, timeoutMs = 5 * 60_000 }) {
+// Listens on 127.0.0.1 only, for one valid callback, until the timeout, or until `signal` aborts (Ctrl-C, 512).
+export function waitForCallback({ port, state, timeoutMs = 5 * 60_000, signal }) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(signal.reason ?? Object.assign(new Error('aborted'), { name: 'AbortError' })); return; }
     const server = createServer((req, res) => {
       const verdict = judgeCallback(req.url, state);
       if (verdict.kind === 'ignore') { res.writeHead(404).end(); return; }
@@ -96,7 +97,9 @@ export function waitForCallback({ port, state, timeoutMs = 5 * 60_000 }) {
       if (ok) { finish(); resolve(verdict.code); } else if (verdict.reason !== 'state mismatch') { finish(); reject(new Error(verdict.reason)); }
     });
     const timer = setTimeout(() => { finish(); reject(new Error('no sign-in within the time limit')); }, timeoutMs);
-    function finish() { clearTimeout(timer); server.close(); }
+    const onAbort = () => { finish(); reject(signal.reason ?? Object.assign(new Error('aborted'), { name: 'AbortError' })); };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    function finish() { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); server.close(); }
     server.on('error', (e) => { clearTimeout(timer); reject(e); });
     server.listen(port, '127.0.0.1');
   });

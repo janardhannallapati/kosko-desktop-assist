@@ -10,6 +10,9 @@ export class RateLimitError extends Error {
   }
 }
 
+/** The pacer's retries ran out on rate limits. 512's route treats it as a transient failure of that one call. */
+export class PacerGaveUp extends Error {}
+
 const sleepReal = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export class Pacer {
@@ -34,7 +37,7 @@ export class Pacer {
         return out;
       } catch (e) {
         if (!(e instanceof RateLimitError)) throw e;
-        if (attempt >= this.maxRetries) throw new Error(`gave up after ${this.maxRetries} retries: ${e.message}`);
+        if (attempt >= this.maxRetries) throw new PacerGaveUp(`gave up after ${this.maxRetries} retries: ${e.message}`);
         const backoff = e.retryAfterSec != null
           ? e.retryAfterSec * 1000
           : Math.min(this.maxBackoffMs, 5000 * 2 ** attempt);
