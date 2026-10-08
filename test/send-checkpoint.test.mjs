@@ -52,7 +52,7 @@ test('a checkpoint for another plan, another app, another version, an extra key 
   const cases = [
     [{ ...full(fp), plan: { ...fp, sha256: '0'.repeat(64) } }, /another plan/],
     [{ ...full(fp), app: 'http://127.0.0.1:3003' }, /another Kosko/],
-    [{ ...full(fp), version: 3 }, /version/],
+    [{ ...full(fp), version: 4 }, /version/],
     [{ ...full(fp), ocr: { 'att-1': 'stored' } }, /not a checkpoint/],
     [{ ...full(fp), ocr: { 'att-1': 'refused:' } }, /not a checkpoint/],
     [(({ ocr, ...v1 }) => v1)(full(fp)), /not a checkpoint/], // version 2 without its ocr key

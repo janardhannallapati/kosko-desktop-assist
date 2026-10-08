@@ -1,0 +1,461 @@
+{
+  "server": {
+    "name": "evernote-mcp",
+    "version": "0.1.0"
+  },
+  "tools": [
+    {
+      "name": "get_note",
+      "title": "Get note",
+      "description": "Fetches a note by GUID. Returns the title, body (ENML), parent notebook GUID, version, timestamps, trash state (`active` / `deleted`), plus the satellite payloads ENML cannot express on its own \u2014 tasks, tags, resource manifest, and selected note attributes \u2014 in `structuredContent`.\n\nThe body is returned in ENML (Evernote's XML dialect). To change the body, call `edit_note` with a `mode` (append/prepend/replace) and a small ENML `content` fragment \u2014 you do not resend the whole body. For `replace`, copy a byte-exact, unique snippet of this ENML as the `find` anchor.\n\nImportant \u2014 ENML is not the full story:\n- Task groups appear in ENML only as a per-group placeholder div (`--en-task-group:true`); the task entities themselves live in `structuredContent.tasks[]` as a lightweight summary (`id`, `label`, `status`, `dueDate`). Read those fields from there, not from the ENML. For a task's `description`, `priority`, `flag`, `recurring` state, or assignee, call `get_task(taskId)`. To **edit** tasks, use the dedicated tools \u2014 `create_task`, `update_task` (status changes are an `update_task` field), `delete_task` \u2014 never via `edit_note` and ENML splicing.\n- `<en-media>` references carry only the resource hash. Filename, mime type, and size live in `structuredContent.resources` \u2014 use those to decide whether the bytes are worth fetching via `get_attachment`.\n\nPrerequisites: call `search_notes` or `semantic_search` first if you don't already have a note GUID.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "noteId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "description": "GUID of the note to fetch."
+          }
+        },
+        "required": [
+          "noteId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Get note"
+      }
+    },
+    {
+      "name": "search_notes",
+      "title": "Search notes",
+      "description": "Searches notes using Evernote's search grammar \u2014 the same query language as the Evernote app's search bar. Use for deterministic, structured queries; for meaning-based queries use `semantic_search` instead. Returns note GUIDs, titles, snippets, and timestamps \u2014 follow up with `get_note(noteId)` for full content.\n\nEmpty `query` lists all active notes (trash excluded). Pass `intrash:true` to list only trashed notes, or `intrash:false` for active only. `intrash:` accepts only `true`/`false` \u2014 there is no single-query way to list active and trashed together.\n\nCommon operators: `tag:work`, `notebook:\"My Notebook\"`, `intitle:meeting`, `created:day-7`, `updated:day-1`, `any: a b` (OR across the following terms \u2014 the space after `any:` is required). Quote multi-word values (`tag:\"to read\"`). Combine with spaces (AND) or `OR` (when `fullBooleanSearch` is true).\n\nDate-relative operators (`created:day-7`, `updated:day-1`) need `clientTimeZone` to resolve correctly.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Evernote search-grammar string. Empty string lists all active notes (trash excluded), matching the Evernote app's default \"All Notes\" view; pass `intrash:true` to list only trashed notes, or `intrash:false` for active only (`intrash:` accepts only `true`/`false` \u2014 there is no single-query way to list active and trashed together). Common operators: `tag:work` (notes with tag), `notebook:\"My Notebook\"` (notes in notebook), `intitle:meeting` (substring in title), `created:day-7` (created in the last 7 days, needs `clientTimeZone` to be accurate), `updated:day-1`, `any: a b` (OR across the following terms \u2014 the space after `any:` is required). Quote multi-word values: `tag:\"to read\"`. Combine with spaces (AND) or `OR` (when `fullBooleanSearch` is true). Use this tool for deterministic / structured queries (\"last 10 notes\", \"notes in notebook X\", \"notes with tag K\"). For meaning-based queries use `semantic_search` instead."
+          },
+          "clientTimeZone": {
+            "default": "UTC",
+            "description": "IANA time zone (e.g. `America/New_York`). Required for date-relative operators like `created:day-7` / `updated:day-1` to resolve correctly. Defaults to UTC.",
+            "type": "string",
+            "minLength": 1
+          },
+          "maxResults": {
+            "default": 10,
+            "description": "Maximum number of notes to return (1\u2013100). Default 10.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "startIndex": {
+            "default": 0,
+            "description": "0-based offset into the result list. Combine with `maxResults` to paginate. Use `totalResultCount` from a previous response to decide whether to keep paging.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "sortBy": {
+            "default": "updated",
+            "description": "Sort field. `updated` (default) for recency; `created` for original date; `relevance` for search-score ranking (only useful with a non-empty query); `title` for alphabetical.",
+            "type": "string",
+            "enum": [
+              "updated",
+              "created",
+              "relevance",
+              "title"
+            ]
+          },
+          "ascending": {
+            "default": false,
+            "description": "When true, sort ascending (oldest first / A\u2192Z). Default false (newest first / Z\u2192A).",
+            "type": "boolean"
+          },
+          "fullBooleanSearch": {
+            "default": true,
+            "description": "When true, `AND` / `OR` / `NOT` in the query are interpreted as boolean operators (matches the Evernote search bar behavior). When false, those words are literal. Default true.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Search notes"
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "hits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "noteId": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "snippet": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "updatedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "score": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "noteId",
+                "title",
+                "snippet",
+                "createdAt",
+                "updatedAt",
+                "score"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "totalResultCount": {
+            "type": "number"
+          },
+          "startIndex": {
+            "type": "number"
+          },
+          "isLastPage": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hits",
+          "totalResultCount",
+          "startIndex",
+          "isLastPage"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "search_notebooks",
+      "title": "Search notebooks",
+      "description": "Lists or searches the user's notebooks by name. Empty `query` returns all notebooks; pass a substring to filter (case-insensitive, ranked exact > prefix > substring; ties alphabetical).\n\nPass `defaultOnly: true` to return only the user's formal default notebook (the one a note created without a target lands in) \u2014 at most one hit, and an empty result means no formal default is configured. With `defaultOnly`, `query`, `maxResults`, and `sortBy` are ignored.\n\nReturns each notebook's GUID, label, `stack` (or null), `primaryAccess` (OWNED / SHARED / WORKSPACE / BUSINESS), `workspaceId` + `workspaceName` (the Space the notebook belongs to, or null when it isn't in one), and a ready-to-use `searchFilter` (`nbGuid:\"<id>\"`) that can be dropped into `search_notes`. Use `workspaceId` / `workspaceName` to tell which Space a notebook lives in and to group notebooks by Space; the `workspaceId` is also what `create_notebook` and `create_note` take to place a new notebook/note inside that Space.\n\nUse this to resolve a notebook name to a GUID before calling `create_note`, `move_notes`, or `rename_notebook`. To search note **content**, use `search_notes` (deterministic) or `semantic_search` (meaning-based).",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "query": {
+            "default": "",
+            "description": "Notebook name substring to match (case-insensitive). Empty string (default) lists all the user's notebooks, sorted by `sortBy`. When non-empty, matches are ranked: exact > prefix > substring; ties break alphabetically. Matching is name-only \u2014 `notebook:` / `tag:` / other note-grammar operators have no effect here.",
+            "type": "string"
+          },
+          "maxResults": {
+            "default": 10,
+            "description": "Maximum number of notebooks to return (1\u2013100). Default 10. Bump to e.g. 100 to approximate the full list view in the Evernote app's notebook list.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "sortBy": {
+            "default": "name",
+            "description": "Sort field, applied when `query` is empty (or after rank-by-match when `query` is non-empty). `name` (default) sorts alphabetically A\u2192Z. `updated` sorts by most-recently-touched first (notebook version DESC) \u2014 useful for surfacing the notebooks the user has been working with lately. Caveat: `updated` reflects changes to the notebook itself (e.g. renames or notebook-metadata changes) and may not reflect edits to the notes inside it. `updated` is independent of any substring filter.",
+            "type": "string",
+            "enum": [
+              "name",
+              "updated"
+            ]
+          },
+          "defaultOnly": {
+            "default": false,
+            "description": "Return only the user's formal default notebook \u2014 the one a note created without a target notebook lands in. At most one hit is returned, and an empty result means no formal default is configured. When true, `query`, `maxResults`, and `sortBy` are ignored.",
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Search notebooks"
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "hits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "notebookId": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "searchFilter": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "stack": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "primaryAccess": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "OWNED",
+                        "SHARED",
+                        "WORKSPACE",
+                        "BUSINESS"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workspaceId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "workspaceName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "notebookId",
+                "label",
+                "searchFilter",
+                "score",
+                "stack",
+                "primaryAccess",
+                "workspaceId",
+                "workspaceName"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "totalResultCount": {
+            "type": "number"
+          },
+          "startIndex": {
+            "type": "number"
+          },
+          "isLastPage": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hits",
+          "totalResultCount",
+          "startIndex",
+          "isLastPage"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "search_tags",
+      "title": "Search tags",
+      "description": "Lists or searches the user's tags by name. Empty `query` returns all tags; pass a substring to filter \u2014 matched case-insensitively server-side across your whole tag set, then ranked exact > prefix > substring (ties alphabetical).\n\nReturns each tag's GUID, label, and a ready-to-use `searchFilter` (`tagGuid:\"<id>\"`) that can be dropped into `search_notes`.\n\nAt most 500 matching tags are fetched per call (a hard upstream cap, no paging). When the query matches more than 500 tags, the tail is dropped, `totalResultCount` saturates at 500, and `isLastPage` is `false` \u2014 so `totalResultCount: 500` with `isLastPage: false` means \"500 or more\", not exactly 500. To see tags beyond the cap, refine `query` to a narrower substring so it matches fewer than 500.\n\nUse this to resolve a tag name to a GUID before calling `create_note`, `edit_note`, `update_note_tags`, or `edit_tag`. To search notes carrying a tag, use `search_notes` with `tag:\"<name>\"`.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "query": {
+            "default": "",
+            "description": "Tag name substring to match (case-insensitive). Empty string (default) lists all the user's tags, sorted by `sortBy`. When non-empty, the substring is matched server-side across the user's entire tag set (so matches aren't limited to recently-touched tags), then ranked: exact > prefix > substring; ties break alphabetically. Matching is name-only \u2014 `notebook:` / `tag:` / other note-grammar operators have no effect here.",
+            "type": "string"
+          },
+          "maxResults": {
+            "default": 10,
+            "description": "Maximum number of tags to return (1\u2013100). Default 10. Bump to e.g. 100 to approximate the full list view in the Evernote app's tag panel.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "sortBy": {
+            "default": "name",
+            "description": "Sort field, applied when `query` is empty (or after rank-by-match when `query` is non-empty). `name` (default) sorts alphabetically A\u2192Z. `updated` sorts by most-recently-touched first (tag version DESC) \u2014 useful for surfacing the tags the user has been working with lately. `updated` is independent of any substring filter.",
+            "type": "string",
+            "enum": [
+              "name",
+              "updated"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Search tags"
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "hits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tagId": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "searchFilter": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "tagId",
+                "label",
+                "searchFilter",
+                "score"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "totalResultCount": {
+            "type": "number"
+          },
+          "startIndex": {
+            "type": "number"
+          },
+          "isLastPage": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hits",
+          "totalResultCount",
+          "startIndex",
+          "isLastPage"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_attachment",
+      "title": "Get attachment download URL",
+      "description": "Returns a short-lived, pre-signed HTTPS URL to download an Evernote attachment (referenced by `<en-media hash=...>` in note ENML). The URL points straight at the file bytes and can be fetched directly \u2014 no Evernote auth header, no follow-up call. It expires after a short window (see `expiresAt`), so fetch it promptly rather than storing it. Works on owned, shared, and business notes \u2014 the URL is only issued if you can read the note.\n\nTip: `get_note`'s `structuredContent.resources` already lists every attachment on the note with its hash, mime, and filename, so you typically know which hash you want before calling this tool.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "noteId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "description": "GUID of the note that owns the attachment. Same shape as `get_note`'s `noteId`."
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "description": "The attachment's content hash (lowercase MD5), as it appears in the `hash` attribute of an `<en-media>` tag inside the note's ENML."
+          }
+        },
+        "required": [
+          "noteId",
+          "hash"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Get attachment download URL"
+      }
+    }
+  ],
+  "note": "The 5 read tools the import uses, of the 27 the server listed on 2026-10-04 (names of all 27 in all_tool_names).",
+  "all_tool_names": [
+    "create_note",
+    "get_note",
+    "edit_note",
+    "update_note_tags",
+    "delete_note",
+    "restore_note",
+    "move_notes",
+    "semantic_search",
+    "search_notes",
+    "search_notebooks",
+    "search_tasks",
+    "search_spaces",
+    "get_space",
+    "create_space",
+    "create_notebook",
+    "rename_notebook",
+    "move_notebook",
+    "search_tags",
+    "create_tag",
+    "edit_tag",
+    "get_attachment",
+    "start_attachment_upload",
+    "finalize_attachment",
+    "create_task",
+    "get_task",
+    "update_task",
+    "delete_task"
+  ]
+}

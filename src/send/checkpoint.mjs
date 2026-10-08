@@ -10,11 +10,19 @@ import { dirname, join } from 'node:path';
 export const CHECKPOINT_NAME = 'kosko-send-checkpoint.json';
 const FORMAT = 'kosko-send-checkpoint';
 // Version 2 (504) adds `ocr`: Evernote attachment id → the bucket its image-text record settled in.
-const VERSION = 2;
-const KEYS = ['format', 'version', 'plan', 'app', 'jobId', 'notebooks', 'tags', 'notes', 'attachments', 'ocr', 'updatedAt'];
+// Version 3 (512) adds `route` (plain | evernote: the run fetched formatted bodies from Evernote's MCP server) and
+// `bodies`: Evernote note GUID → the body its settled note was sent with (BODY_RE), so a resumed run counts it as the
+// run that settled it did and never fetches a settled note's body again.
+const VERSION = 3;
+const KEYS = ['format', 'version', 'plan', 'app', 'route', 'jobId', 'notebooks', 'tags', 'notes', 'attachments', 'ocr', 'bodies', 'updatedAt'];
+export const ROUTES = Object.freeze(['plain', 'evernote']);
+// formatted: the ENML from get_note, converted. plain: the plain text (W2's body), with why when the run wanted a
+// formatted one — the note was not listed by Evernote, get_note had no body for it, the converter refused it, or Kosko
+// refused the formatted body.
+const BODY_RE = /^(formatted|plain(:(not_listed|missing|unconvertible|kosko_refused))?)$/;
 // A settled note: its outcome, and (467) the reason a resumed run's receipt must still name — `skipped:changed_in_evernote`,
 // `not_imported:id_clash`. The reason is a Kosko reason code (lib/enex/receipt-reasons.js shape).
-const OUTCOME_RE = /^(created|skipped|not_imported)(:[a-z_]{1,40})?$/;
+const OUTCOME_RE = /^(created|updated|skipped|not_imported)(:[a-z_]{1,40})?$/; // 511/512: `updated`
 // 467 review H2: an attachment's receipt bucket, so a resumed run counts it as the run that settled it did.
 const BUCKETS = new Set(['stored', 'placeholder', 'over_cap', 'type_not_stored', 'unreadable', 'not_imported_with_note']);
 // 504: an OCR record's bucket (send-ocr.mjs); the refusal reason is a Kosko reason code.
@@ -36,8 +44,8 @@ export function planFingerprint(planPath) {
   });
 }
 
-export const emptyCheckpoint = ({ plan, app, jobId = null }) =>
-  ({ format: FORMAT, version: VERSION, plan, app, jobId, notebooks: {}, tags: { done: false }, notes: {}, attachments: {}, ocr: {}, updatedAt: null });
+export const emptyCheckpoint = ({ plan, app, jobId = null, route = 'plain' }) =>
+  ({ format: FORMAT, version: VERSION, plan, app, route, jobId, notebooks: {}, tags: { done: false }, notes: {}, attachments: {}, ocr: {}, bodies: {}, updatedAt: null });
 
 const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const sameKeys = (o, keys) => Object.keys(o).length === keys.length && keys.every((k) => Object.hasOwn(o, k));
@@ -46,15 +54,19 @@ const mapOf = (o, valueOk) => isPlain(o) && Object.entries(o).every(([k, v]) => 
 function isCheckpoint(c) {
   return isPlain(c) && sameKeys(c, KEYS) && c.format === FORMAT && Number.isInteger(c.version)
     && isPlain(c.plan) && sameKeys(c.plan, ['sha256', 'bytes']) && /^[0-9a-f]{64}$/.test(c.plan.sha256) && Number.isInteger(c.plan.bytes)
-    && typeof c.app === 'string' && (c.jobId === null || UUID_RE.test(c.jobId))
+    && typeof c.app === 'string' && ROUTES.includes(c.route) && (c.jobId === null || UUID_RE.test(c.jobId))
     && mapOf(c.notebooks, (v) => typeof v === 'string' && UUID_RE.test(v))
     && isPlain(c.tags) && sameKeys(c.tags, ['done']) && typeof c.tags.done === 'boolean'
     && mapOf(c.notes, (v) => typeof v === 'string' && OUTCOME_RE.test(v)) && mapOf(c.attachments, (v) => v === true || BUCKETS.has(v))
     && mapOf(c.ocr, (v) => typeof v === 'string' && OCR_BUCKET_RE.test(v))
+    && mapOf(c.bodies, (v) => typeof v === 'string' && BODY_RE.test(v))
     && (c.updatedAt === null || typeof c.updatedAt === 'string');
 }
 
-/** A version-1 checkpoint (W2, before image text) is refused, never upgraded: its notes settled with no OCR record. */
+/**
+ * A version-1 checkpoint (W2, before image text) or version-2 one (W3, before formatted bodies) is refused, never
+ * upgraded: its notes settled with no OCR record (v1), or with no record of the body they were sent with (v2).
+ */
 export class OldCheckpointError extends Error {}
 
 /**
@@ -62,7 +74,7 @@ export class OldCheckpointError extends Error {}
  * OldCheckpointError for a version-1 checkpoint: the person must start a new run on purpose (504), and the read's own
  * error for a file that cannot be read (EACCES, EISDIR): only a file that is not JSON is "starting over".
  */
-export function loadCheckpoint(planPath, { plan, app }) {
+export function loadCheckpoint(planPath, { plan, app, route = 'plain' }) {
   const path = checkpointPath(planPath);
   if (!existsSync(path)) return { checkpoint: null, reason: null };
   const raw = readFileSync(path, 'utf8'); // a file that cannot be READ (EACCES, EISDIR) is an error, not "starting over"
@@ -72,10 +84,17 @@ export function loadCheckpoint(planPath, { plan, app }) {
     throw new OldCheckpointError(`The saved progress (${path}) is from an earlier version of this tool, which did not send `
       + 'image text, so it cannot be continued. Delete that file to start a new run; notes already in Kosko are not sent twice.');
   }
+  if (isPlain(c) && c.format === FORMAT && c.version === 2) {
+    throw new OldCheckpointError(`The saved progress (${path}) is from an earlier version of this tool, which did not record `
+      + 'the body each note was sent with, so it cannot be continued. Delete that file to start a new run; notes already in '
+      + 'Kosko are not sent twice.');
+  }
   if (isPlain(c) && c.format === FORMAT && c.version !== VERSION) return { checkpoint: null, reason: `The saved progress is from another version (${c.version}); starting over.` };
   if (!isCheckpoint(c)) return { checkpoint: null, reason: 'The saved progress is not a checkpoint this tool wrote; starting over.' };
   if (c.plan.sha256 !== plan.sha256 || c.plan.bytes !== plan.bytes) return { checkpoint: null, reason: 'The saved progress is for another plan; starting over.' };
   if (c.app !== app) return { checkpoint: null, reason: `The saved progress is for another Kosko (${c.app}); starting over.` };
+  // 512: a run with --evernote and one without send different bodies; one is never continued as the other.
+  if (c.route !== route) return { checkpoint: null, reason: `The saved progress is for the ${c.route === 'evernote' ? 'formatted (--evernote)' : 'plain-text'} route; starting over.` };
   return { checkpoint: c, reason: null };
 }
 

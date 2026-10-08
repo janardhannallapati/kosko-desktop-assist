@@ -20,6 +20,7 @@ const USAGE = `Usage:
   kosko-assist probe-mcp --out <dir> [--port 8765] [--max-notes N] [--max-minutes 60] [--plan-wait-minutes 30]
   kosko-assist connect [--app <Kosko address>]
   kosko-assist send --plan <dry-run folder> [--app <Kosko address>] [--data-dir <Evernote data folder>] [--account <user id>]
+                    [--evernote [--port 8765]]
 
 probe-mcp signs you in to Evernote (read only), lists the MCP server's tools into <dir>/tools.json, waits for
 <dir>/plan.json, then measures how fast notes can be fetched. The report holds no note titles or bodies.
@@ -41,7 +42,12 @@ there is deliberately no --token option, because a flag is saved in your shell h
 
 send moves the account the plan describes into Kosko: notebooks under their stacks, every tag, every note with its plain
 text, dates and Evernote id, and the attachments on this computer. It first counts Evernote again and stops if anything
-changed since the dry run. Ctrl-C stops it cleanly; running it again continues, and never creates anything twice.`;
+changed since the dry run. Ctrl-C stops it cleanly; running it again continues, and never creates anything twice.
+
+send --evernote also signs you in to Evernote (read only, in your browser) and fetches each note's formatted body from
+Evernote's MCP server, so tables, checklists and pictures arrive where you put them. Notes already in Kosko as plain text
+are upgraded in place; a note you edited in Kosko since is left as you had it. Evernote offers this on paid plans only:
+on a free plan the tool says so and sends plain text.`;
 
 const [command, ...rest] = process.argv.slice(2);
 // 466 rule 1: a token on the command line lands in shell history and process listings. Refused before anything runs.
@@ -53,12 +59,14 @@ if (rest.some((a) => a === '--token' || a.startsWith('--token=') || /cvit_/i.tes
 if (command === 'send') {
   let values;
   try {
-    ({ values } = parseArgs({ args: rest, options: { plan: { type: 'string' }, app: { type: 'string' }, 'data-dir': { type: 'string' }, account: { type: 'string' } } }));
+    ({ values } = parseArgs({ args: rest, options: { plan: { type: 'string' }, app: { type: 'string' }, 'data-dir': { type: 'string' }, account: { type: 'string' },
+      evernote: { type: 'boolean' }, port: { type: 'string' } } }));
   } catch (e) {
     console.error(`${redact(e.message)}\n\n${USAGE}`);
     process.exit(2);
   }
-  process.exit(await runSendCommand({ plan: values.plan, app: values.app, dataDir: values['data-dir'], account: values.account }));
+  process.exit(await runSendCommand({ plan: values.plan, app: values.app, dataDir: values['data-dir'], account: values.account,
+    evernote: values.evernote === true, port: values.port }));
 }
 if (command === 'connect') {
   let values;

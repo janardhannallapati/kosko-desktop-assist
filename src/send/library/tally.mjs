@@ -10,10 +10,13 @@ const NOT_IMPORTED_FIRST = (a, b) => (a.outcome === b.outcome ? 0 : a.outcome ==
 const cut = (v) => Array.from(String(v ?? '')).slice(0, LIMITS.text).join('').toWellFormed();
 const byteSize = (v) => new TextEncoder().encode(JSON.stringify(v)).length;
 
+// 511: an unchanged note is plain "already here" and never named, or a re-run would list every note it met.
+const QUIET_SKIP_REASONS = new Set(['unchanged']);
+
 export const emptyAttachmentCounts = () => ({ stored: 0, placeholder: 0, over_cap: 0, type_not_stored: 0, unreadable: 0, not_imported_with_note: 0 });
 
 export function createTally() {
-  const notes = { created: 0, skipped: 0, not_imported: 0 };
+  const notes = { created: 0, updated: 0, skipped: 0, not_imported: 0 }; // 511: updated
   const reasons = {};
   const skipReasons = {};
   const attachments = emptyAttachmentCounts();
@@ -25,7 +28,7 @@ export function createTally() {
   return {
     settledKeys: settled,
     /**
-     * One note, once: `outcome` created | skipped | not_imported, `reason` a Kosko reason code or null, `counts` its
+     * One note, once: `outcome` created | updated | skipped | not_imported, `reason` a Kosko reason code or null, `counts` its
      * attachment rows by bucket (ignored for a note not imported: its rows are `not_imported_with_note`).
      */
     settle(key, { outcome, reason = null, title, notebook, tagCount, attachmentRows, counts, missingFiles }) {
@@ -40,7 +43,7 @@ export function createTally() {
         for (const [k, n] of Object.entries(counts)) attachments[k] += n;
         if (outcome === 'skipped' && reason) skipReasons[reason] = (skipReasons[reason] ?? 0) + 1;
       }
-      if (outcome === 'not_imported' || reason) named.push({ title: cut(title || 'Untitled note'), notebook: cut(notebook), reason, outcome });
+      if (outcome === 'not_imported' || (reason && !QUIET_SKIP_REASONS.has(reason))) named.push({ title: cut(title || 'Untitled note'), notebook: cut(notebook), reason, outcome });
       // A file that was not on this computer is named whatever became of its note (465 rule 10).
       for (const f of missingFiles) missing.push({ note: cut(title || 'Untitled note'), name: cut(f || 'Untitled file') });
     },

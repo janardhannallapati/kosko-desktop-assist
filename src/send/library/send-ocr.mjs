@@ -21,7 +21,7 @@ const MD5_RE = /^[0-9a-f]{32}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const GUID_RE = /^[A-Za-z0-9_-]{1,64}$/; // Kosko 463's external_id check (as send-notes.mjs)
 const REASON_RE = /^[a-z_]{1,40}$/;
-const SENT = new Set(['created', 'skipped']);
+const SENT = new Set(['created', 'updated', 'skipped']); // 512: an updated note keeps its id and its scans
 const NOT_LIVE = new Set(['trash', 'deleted', 'new', 'clash']); // note-ids states with no live Kosko note (Kosko 424/463)
 const isCount = (n) => Number.isInteger(n) && n >= 0;
 
