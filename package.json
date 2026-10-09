@@ -17,9 +17,7 @@
   },
   "license": "Apache-2.0",
   "dependencies": {
-    "@kosko-app/enex-core": "0.2.1"
-  },
-  "devDependencies": {
+    "@kosko-app/enex-core": "0.3.0",
     "@tiptap/core": "3.30.5",
     "@tiptap/extension-highlight": "3.30.5",
     "@tiptap/extension-image": "3.30.5",
@@ -30,6 +28,7 @@
     "@tiptap/extension-text-align": "3.30.5",
     "@tiptap/extension-text-style": "3.30.5",
     "@tiptap/pm": "3.30.5",
-    "@tiptap/starter-kit": "3.30.5"
+    "@tiptap/starter-kit": "3.30.5",
+    "jsdom": "29.1.1"
   }
 }

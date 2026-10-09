@@ -83,7 +83,7 @@ test('a W2-era import is backfilled: skipped notes get their image text under th
   const r = await send(s);
   assert.equal(r.exitCode, 0, r.out);
   const job = s.kosko.job(r.jobId);
-  assert.deepEqual(job.summary.notes, { created: 0, skipped: 4, not_imported: 0 });
+  assert.deepEqual(job.summary.notes, { created: 0, updated: 0, skipped: 4, not_imported: 0 });
   assert.equal(job.receipt.desktop.ocrWords, 3);
   assert.equal(s.kosko.state.ocr.get(`${ids.get('In a Space')}|${HASH.telugu}`)?.text, TELUGU_WORDS);
   assert.ok(sentItems(s).every((i) => [...ids.values()].includes(i.note_id)), 'only the notes Kosko already holds');

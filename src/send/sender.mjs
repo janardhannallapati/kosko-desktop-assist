@@ -10,7 +10,7 @@ const TRANSIENT_RETRIES = 5;
 // A Retry-After the server means is never this long; a bigger one would overflow setTimeout (2^31 ms) and fire at once,
 // turning the wait into a hot loop (466 review M6). Kosko's own formula stays a byte-for-byte copy (backoff.mjs).
 const MAX_WAIT_MS = 15 * 60_000;
-const STOPPED = 'Stopped. Run the assist again to continue — nothing is sent twice.';
+export const STOPPED = 'Stopped. Run the assist again to continue — nothing is sent twice.';
 
 export function abortableSleep(ms, signal) {
   return new Promise((resolve, reject) => {

@@ -37,7 +37,7 @@ test('one run: every structure count equals the plan, and the receipt says so', 
   assert.equal(job.source, 'desktop');
   assert.equal(job.status, 'complete');
   assert.deepEqual(job.summary.expected, { notes: 4, attachments: 8, notebooks: 4, stacks: 2, tags: 2, noteTags: 2, trashedNotes: 1, missingFiles: 1, ocr: 6 });
-  assert.deepEqual(job.summary.notes, { created: 4, skipped: 0, not_imported: 0 });
+  assert.deepEqual(job.summary.notes, { created: 4, updated: 0, skipped: 0, not_imported: 0 });
   const a = job.summary.attachments;
   assert.equal(Object.values(a).reduce((t, n) => t + n, 0), 8, 'every attachment accounted for');
   assert.deepEqual(a, { stored: 4, placeholder: 1, over_cap: 0, type_not_stored: 0, unreadable: 3, not_imported_with_note: 0 });
@@ -81,7 +81,7 @@ test('a second run creates nothing: all skipped, nothing uploaded, notebooks and
   const r = await send(s);
   assert.equal(r.exitCode, 0, r.out);
   const job = s.kosko.job(r.jobId);
-  assert.deepEqual(job.summary.notes, { created: 0, skipped: 4, not_imported: 0 });
+  assert.deepEqual(job.summary.notes, { created: 0, updated: 0, skipped: 4, not_imported: 0 });
   assert.equal(s.kosko.state.notes.size, notesBefore);
   assert.equal(s.kosko.state.uploads.length, uploads, 'nothing uploaded again');
   assert.equal(job.receipt.desktop.notebooks, 4);
@@ -108,7 +108,7 @@ test('a clash is not sent and is named; ≤ 900 note-ids per call', async () => 
   for (const [fp, e] of s.kosko.state.ledgerByFp) if (e.guid === ID.nActive) { s.kosko.state.ledgerByGuid.delete(ID.nActive); e.guid = 'someone-else'; }
   const r = await send(s);
   const job = s.kosko.job(r.jobId);
-  assert.deepEqual(job.summary.notes, { created: 0, skipped: 3, not_imported: 1 });
+  assert.deepEqual(job.summary.notes, { created: 0, updated: 0, skipped: 3, not_imported: 1 });
   assert.ok(job.receipt.notes.some((n) => n.title === 'Active note' && n.reason === 'id_clash'));
   assert.ok(s.kosko.state.noteIdCalls.every((n) => n <= 900));
 });
@@ -122,7 +122,7 @@ test('id_taken is resent once under a new id; twice becomes id_clash with a refu
   s2.kosko.state.noteErrors.set(ID.nActive, ['id_taken', 'id_taken']);
   r = await send(s2);
   const job = s2.kosko.job(r.jobId);
-  assert.deepEqual(job.summary.notes, { created: 3, skipped: 0, not_imported: 1 });
+  assert.deepEqual(job.summary.notes, { created: 3, updated: 0, skipped: 0, not_imported: 1 });
   assert.equal(job.summary.reasons.id_clash, 1);
   assert.equal(s2.kosko.state.refusals.length, 1);
   assert.equal(s2.kosko.state.refusals[0].reason, 'id_clash');
@@ -133,7 +133,7 @@ test('quota_exceeded is recorded as a refusal and named; the job still closes wi
   s.kosko.state.noteErrors.set(ID.nActive, ['quota_exceeded']);
   const r = await send(s);
   const job = s.kosko.job(r.jobId);
-  assert.deepEqual(job.summary.notes, { created: 3, skipped: 0, not_imported: 1 });
+  assert.deepEqual(job.summary.notes, { created: 3, updated: 0, skipped: 0, not_imported: 1 });
   assert.equal(s.kosko.state.refusals[0].reason, 'quota_exceeded');
   assert.equal(Object.values(job.summary.attachments).reduce((t, n) => t + n, 0), 8);
   assert.equal(job.summary.attachments.not_imported_with_note, 3);
@@ -161,7 +161,7 @@ test('a stopped run resumes the same job and finishes it; the totals equal a sin
   assert.equal(second.exitCode, 0, second.out);
   const job = s.kosko.job(second.jobId);
   assert.equal(second.jobId, first.jobId, 'the running job is continued');
-  assert.deepEqual(job.summary.notes, { created: 4, skipped: 0, not_imported: 0 });
+  assert.deepEqual(job.summary.notes, { created: 4, updated: 0, skipped: 0, not_imported: 0 });
   assert.equal(s.kosko.state.notes.size, 4);
 });
 
@@ -186,7 +186,7 @@ test('Ctrl-C leaves the job running; the next run continues it, keeping every ou
   assert.equal(second.exitCode, 0, second.out);
   assert.equal(second.jobId, first.jobId);
   const job = s.kosko.job(second.jobId);
-  assert.deepEqual(job.summary.notes, { created: 4, skipped: 0, not_imported: 0 });
+  assert.deepEqual(job.summary.notes, { created: 4, updated: 0, skipped: 0, not_imported: 0 });
   assert.deepEqual(job.summary.attachments, { stored: 3, placeholder: 1, over_cap: 0, type_not_stored: 1, unreadable: 3, not_imported_with_note: 0 });
 });
 
@@ -244,5 +244,5 @@ test('an answer that is neither an outcome nor an error is sent again, never set
   s.kosko.state.badAnswers.add(ID.nActive);
   const r = await send(s);
   assert.equal(r.exitCode, 0, r.out);
-  assert.deepEqual(s.kosko.job(r.jobId).summary.notes, { created: 4, skipped: 0, not_imported: 0 });
+  assert.deepEqual(s.kosko.job(r.jobId).summary.notes, { created: 4, updated: 0, skipped: 0, not_imported: 0 });
 });

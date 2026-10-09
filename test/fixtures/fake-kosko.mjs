@@ -10,6 +10,14 @@ const uuidOf = (text) => {
   const h = createHash('sha256').update(text).digest('hex');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-8${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
 };
+// Kosko 511's import_body_hash: one hash over title and body (jsonb normalises key order there; JSON here is built in a
+// fixed order by the tool, and a Kosko edit through editNote changes the stored record itself).
+const bodyHash = (title, content) => createHash('sha256').update(JSON.stringify([title ?? null, content ?? null])).digest('hex');
+const mediaPaths = (doc) => {
+  const out = new Set();
+  (function walk(n) { if (!n || typeof n !== 'object') return; if (typeof n.attrs?.path === 'string') out.add(n.attrs.path); (n.content ?? []).forEach(walk); })(doc);
+  return out;
+};
 const json = (status, body, headers = {}) => new Response(body === null ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 
 export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
@@ -38,10 +46,37 @@ export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
     ocr: new Map(), ocrCalls: [],
     // A note in Kosko's trash, or locked (encryption <> 'none'), by node id. A DELETED note: remove it from `notes`
     // and keep its ledger entry (Kosko 420's tombstone answers the same way).
-    trashed: new Set(), locked: new Set()
+    trashed: new Set(), locked: new Set(),
+    // 511/512: notes updated in place (node ids), the pre-images note_versions would hold, and would_drop_media refusals
+    updates: [], versions: [], dropRefusals: 0
   };
 
   function job(id) { return state.jobs.find((j) => j.id === id); }
+
+  // Kosko 511 rule 2, in its order: deleted, trash, same version, no flag, no baseline, edited in Kosko, unchanged,
+  // then the update in place (same id, title and body, tags only added; would_drop_media refused). Since 511 r8b the
+  // batch route names that refusal `would_drop_media` per note (Kosko 512's noteRefusalCode); any other 22023 is `invalid`.
+  function matched(e, r, index) {
+    const skip = (reason) => ({ index, outcome: 'skipped', node_id: e.nodeId, reason });
+    const node = state.notes.get(e.nodeId);
+    if (!node) return skip('deleted_in_kosko');
+    if (state.trashed.has(e.nodeId)) return skip('in_kosko_trash');
+    if (e.version === r.version_hash) return skip(null);
+    if (r.update !== true) return skip('changed_in_evernote');
+    if (!e.writtenHash) return skip('changed_in_evernote');
+    if (bodyHash(node.title, node.content) !== e.writtenHash) return skip('edited_in_kosko');
+    if (bodyHash(r.title, r.content) === e.writtenHash) { e.version = r.version_hash; return skip('unchanged'); }
+    if (r.id && r.id !== e.nodeId) return { index, error: { code: 'invalid' } };
+    // 511 rule 5: only this note's real keys (notes/<id>/…) must survive; a placeholder may become its stored file (513).
+    const incoming = mediaPaths(r.content);
+    if (![...mediaPaths(node.content)].filter((p) => p.startsWith(`notes/${e.nodeId}/`)).every((p) => incoming.has(p))) { state.dropRefusals += 1; return { index, error: { code: 'would_drop_media' } }; }
+    if (!ownMedia({ ...r, id: e.nodeId })) return { index, error: { code: 'invalid' } };
+    state.versions.push({ nodeId: e.nodeId, content: node.content });
+    Object.assign(node, { title: r.title, content: r.content, updated_at: r.updated_at, tags: [...new Set([...(node.tags ?? []), ...(r.tags ?? [])])] });
+    Object.assign(e, { version: r.version_hash, writtenHash: bodyHash(node.title, node.content) });
+    state.updates.push(e.nodeId);
+    return { index, outcome: 'updated', node_id: e.nodeId, reason: null };
+  }
   function openJob(id) { const j = job(id); return j && j.status === 'running' ? j : null; }
 
   const routes = {
@@ -135,10 +170,11 @@ export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
         const queued = state.noteErrors.get(r.external_id);
         if (queued?.length) return { index, error: { code: queued.shift() } };
         if (r.content?.type !== 'doc' || !ownMedia(r) || !/^fp1:[0-9a-f]{64}$/.test(r.fingerprint) || !/^[0-9a-f]{64}$/.test(r.version_hash)) return { index, error: { code: 'invalid' } };
+        if (r.update !== undefined && typeof r.update !== 'boolean') return { index, error: { code: 'invalid' } };
         const known = (r.external_id && state.ledgerByGuid.get(r.external_id)) || state.ledgerByFp.get(r.fingerprint);
-        if (known) return { index, outcome: 'skipped', node_id: known.nodeId, reason: null };
+        if (known) return matched(known, r, index);
         if (state.notes.has(r.id)) return { index, error: { code: 'id_taken' } };
-        const entry = { nodeId: r.id, guid: r.external_id ?? null };
+        const entry = { nodeId: r.id, guid: r.external_id ?? null, version: r.version_hash, writtenHash: bodyHash(r.title, r.content) };
         state.ledgerByFp.set(r.fingerprint, entry);
         if (r.external_id) state.ledgerByGuid.set(r.external_id, entry);
         state.notes.set(r.id, r);
@@ -211,7 +247,22 @@ export function createFakeKosko({ maxFileBytes = 200 * 1024 * 1024 } = {}) {
     return handler(init.body ? JSON.parse(init.body) : undefined, m?.[1], init.body ?? '');
   };
 
-  const fake = { fetch, state, token: null, job };
+  /** An edit in Kosko's editor (through the notes view): the body changes, the ledger's written hash does not. */
+  const editNote = (nodeId, { title, content } = {}) => {
+    const n = state.notes.get(nodeId);
+    if (title !== undefined) n.title = title;
+    if (content !== undefined) n.content = content;
+  };
+  /**
+   * A key the note holds that a new body might not name (as an import that stored one more file would leave it): the
+   * node gains a media node, and the ledger's written hash follows, so it is not read as an edit in Kosko.
+   */
+  const holdKey = (nodeId, path) => {
+    const n = state.notes.get(nodeId);
+    n.content = { ...n.content, content: [...n.content.content, { type: 'noteImage', attrs: { path } }] };
+    for (const e of state.ledgerByFp.values()) if (e.nodeId === nodeId) e.writtenHash = bodyHash(n.title, n.content);
+  };
+  const fake = { fetch, state, token: null, job, editNote, holdKey };
   return fake;
 }
 

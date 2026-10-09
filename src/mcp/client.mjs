@@ -61,11 +61,12 @@ export class McpClient {
     }
     const text = await res.text();
     if (payload.id == null) return { ms, status: res.status };
-    if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
+    if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status, detail: text.slice(0, 2000) });
     const msg = parseRpcBody(text, res.headers.get('content-type'), payload.id);
     if (msg.error) {
       if (LIMIT_TEXT.test(msg.error.message ?? '')) throw new RateLimitError(`rpc ${msg.error.code}`, null, 'rpc');
-      throw Object.assign(new Error(`rpc error ${msg.error.code}`), { rpcCode: msg.error.code });
+      // The server's sentence is kept OFF the message (it is never printed): 512 reads it to tell a free-plan refusal.
+      throw Object.assign(new Error(`rpc error ${msg.error.code}`), { rpcCode: msg.error.code, detail: String(msg.error.message ?? '') });
     }
     return { ms, status: res.status, result: msg.result };
   }
@@ -107,7 +108,7 @@ export class McpClient {
         const m = text.match(/(\d+)\s*(?:s\b|sec|second)/i);
         throw new RateLimitError('tool rate limit', m ? Number(m[1]) : null, 'tool');
       }
-      throw Object.assign(new Error(`tool ${name} returned an error`), { toolError: true });
+      throw Object.assign(new Error(`tool ${name} returned an error`), { toolError: true, detail: text.slice(0, 2000) });
     }
     return { ms: r.ms, result: res };
   }
