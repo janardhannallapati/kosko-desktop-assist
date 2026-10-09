@@ -67,8 +67,8 @@ export const PROOF_EXPECTED = Object.freeze({
   links: { rewritten: 1, left: 2, notInPlan: 2 }
 });
 
-/** The synthetic account plus the five proof notes, on disk. Returns buildSyntheticAccount's result. */
-export function buildProofAccount({ root } = {}) {
+/** The synthetic account plus the five proof notes, on disk; `mutate(db)` runs last (Kosko 519's extras). */
+export function buildProofAccount({ root, mutate } = {}) {
   const notes = [
     [PROOF_ID.nTable, 'Table note', 'Quarterly figures\nItem Count\nPens 12\nPaper 300\nend of table'],
     [PROOF_ID.nChecklist, 'Checklist note', 'Buy milk\nCall the bank'],
@@ -88,6 +88,7 @@ export function buildProofAccount({ root } = {}) {
     att(PROOF_ID.aPic1, PROOF_ID.nPictures, PIC1, 'first.png', true);
     att(PROOF_ID.aPic2, PROOF_ID.nPictures, PIC2, 'second.png', true);
     att(PROOF_ID.aFetched, PROOF_ID.nFetched, FETCHED, 'scan.png', false);
+    if (mutate) mutate(db);
   } });
   for (const [bytes] of [[PIC1], [PIC2]]) {
     const dir = join(acct.resourceCacheDir, PROOF_ID.nPictures);
