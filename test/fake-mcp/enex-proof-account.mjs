@@ -1,4 +1,4 @@
-// Kosko 519 — the account and the Evernote exports for Kosko's ENEX proof (scripts/desktop-assist/enex-proof.mjs): the
+// Kosko 524 — the account and the Evernote exports for Kosko's ENEX proof (scripts/desktop-assist/enex-proof.mjs): the
 // free plan's path, where the tool's plain-text run is followed by an ENEX drop on /import that upgrades every note.
 //
 // The 515 proof account (proof-account.mjs), plus what W5's demo needs:

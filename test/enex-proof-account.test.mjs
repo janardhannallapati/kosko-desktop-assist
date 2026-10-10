@@ -1,4 +1,4 @@
-// Kosko 519 — the ENEX proof account and its exports (test/fake-mcp/enex-proof-account.mjs) are what Kosko's ENEX proof
+// Kosko 524 — the ENEX proof account and its exports (test/fake-mcp/enex-proof-account.mjs) are what Kosko's ENEX proof
 // expects, read back with enex-core's own reader: a fixture drift fails here first, in seconds.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

@@ -67,7 +67,7 @@ export const PROOF_EXPECTED = Object.freeze({
   links: { rewritten: 1, left: 2, notInPlan: 2 }
 });
 
-/** The synthetic account plus the five proof notes, on disk; `mutate(db)` runs last (Kosko 519's extras). */
+/** The synthetic account plus the five proof notes, on disk; `mutate(db)` runs last (Kosko 524's extras). */
 export function buildProofAccount({ root, mutate } = {}) {
   const notes = [
     [PROOF_ID.nTable, 'Table note', 'Quarterly figures\nItem Count\nPens 12\nPaper 300\nend of table'],
