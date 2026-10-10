@@ -17,13 +17,38 @@ Evernote gives formatted notes only on paid plans, so there are two routes:
   Evernote export (`.enex` files) dropped on Kosko's [Import page](https://kosko.app/import), which formats those
   same notes in place, without making copies.
 
+## Download
+
+Each [release](https://github.com/janardhannallapati/kosko-desktop-assist/releases) has one file per computer, with
+nothing to install first (Node.js is inside it):
+
+- Windows: `kosko-assist-windows-x64.exe`
+- Mac with Apple silicon (M1 or later): `kosko-assist-macos-arm64`
+- Mac with an Intel processor: `kosko-assist-macos-x64`
+
+`SHA256SUMS.txt` in the same release holds each file's SHA-256, to check a download against.
+
+These builds are **not signed yet**, so the first time you open one, your computer warns you:
+
+- **Windows:** SmartScreen says "Windows protected your PC". Choose **More info**, then **Run anyway**.
+- **macOS:** in Terminal, make the file runnable (`chmod +x kosko-assist-macos-arm64`) and run it
+  (`./kosko-assist-macos-arm64 accounts`). macOS blocks it the first time. Open **System Settings → Privacy & Security**,
+  scroll to the message about `kosko-assist`, choose **Open Anyway**, then run it again.
+
+Signed installers come before the public launch. The commands are the same as below, with the file's name in place
+of `node bin/kosko-assist.mjs`, for example `kosko-assist-windows-x64.exe dry-run --out kosko-plan`.
+
+## Run it with Node.js instead
+
 Start without git or a clone, on the computer where Evernote is installed (Node.js 22.16 or newer):
 
 ```sh
 npx https://github.com/janardhannallapati/kosko-desktop-assist/archive/refs/heads/main.tar.gz dry-run --out kosko-plan
 ```
 
-The first step sends nothing: it writes a plan you can read in the `kosko-plan` folder. Signed installers come later.
+The first step sends nothing: it writes a plan you can read in the `kosko-plan` folder.
+
+## What it does
 
 **Status: early development.** Today it contains:
 
@@ -63,6 +88,10 @@ node bin/kosko-assist.mjs connect                          # or --app http://127
 node bin/kosko-assist.mjs send --plan ./kosko-dry-run      # add --data-dir / --app as above where needed
 npm test
 ```
+
+`npm run test:sea` builds the single executable for the computer it runs on into `dist/` (`npm run build:sea` builds
+without testing) and runs it through the CLI's main paths. The release workflow does the same on Windows and macOS
+when a `v<version>` tag is pushed.
 
 Requires Node 22.16 or later (for `node:sqlite`'s backup API). One dependency, `@kosko-app/enex-core` (Tiptap is a
 development dependency, for the tests that prove each note fits the schema).
