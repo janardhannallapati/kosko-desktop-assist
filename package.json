@@ -1,6 +1,6 @@
 {
   "name": "kosko-desktop-assist",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "description": "Moves a whole Evernote account into Kosko from the user's own computer. Reads Evernote's local data read-only; the database file never leaves the machine.",
   "type": "module",
@@ -13,7 +13,9 @@
   "scripts": {
     "test": "node --no-warnings=ExperimentalWarning --test test/*.test.mjs",
     "test:core": "npm --prefix packages/enex-core test",
-    "test:all": "npm test && npm run test:core"
+    "test:all": "npm test && npm run test:core",
+    "build:sea": "node scripts/build-sea.mjs",
+    "test:sea": "node scripts/build-sea.mjs && node --no-warnings=ExperimentalWarning --test test/sea/*.test.mjs"
   },
   "license": "Apache-2.0",
   "dependencies": {
@@ -30,5 +32,9 @@
     "@tiptap/pm": "3.30.5",
     "@tiptap/starter-kit": "3.30.5",
     "jsdom": "29.1.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "postject": "1.0.0-alpha.6"
   }
 }
