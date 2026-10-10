@@ -32,17 +32,26 @@ export function progressLines(s, total, estimate) {
   return [`Sent ${num(s.settled)} of ${num(total)} notes (${pct} %): ${counts}`, eta ? `${where} · ${eta}` : where];
 }
 
-export function createSendProgress({ total, totalBytes = 0, out, now = () => Date.now() }) {
+export function createSendProgress({ total, totalBytes = 0, out, now = () => Date.now(), start = { settled: 0, bytes: 0 } }) {
   const estimator = createEstimator({ totalNotes: total, totalBytes, now });
+  // The quiet first minute counts from now: what a resumed run already settled is the starting point, not a rate.
+  estimator.sample({ notes: start.settled, bytes: start.bytes });
   const tty = Boolean(out.isTTY);
   let drawn = false;
   let lastDraw = -Infinity;
   let lastPipe = now();
   let latest = null;
 
+  // A line wider than the terminal wraps onto a third row the two-line erase cannot reach (review, 2026-10-10), so on
+  // a terminal each line is cut to the width it has.
+  const fit = (line) => {
+    const cols = Number(out.columns) || 0;
+    const chars = [...line];
+    return cols > 1 && chars.length > cols - 1 ? `${chars.slice(0, cols - 2).join('')}…` : line;
+  };
   const draw = (s, estimate) => {
     const [a, b] = progressLines(s, total, estimate);
-    if (tty) { out.write(`${drawn ? ERASE_TWO : ''}${a}\n${b}`); drawn = true; } else out.write(`${a}\n${b}\n`);
+    if (tty) { out.write(`${drawn ? ERASE_TWO : ''}${fit(a)}\n${fit(b)}`); drawn = true; } else out.write(`${a}\n${b}\n`);
   };
 
   return {

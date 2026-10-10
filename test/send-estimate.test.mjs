@@ -105,3 +105,33 @@ describe('the words (estimateText)', () => {
   });
 });
 
+
+describe('at a fast cadence — the review\'s majors 1 and 2, as in Kosko\'s tests', () => {
+  it('stability is counted per 10 s, not per call', () => {
+    const { at } = clocked(3_000);
+    at(0, 0);
+    let firstRough = null; let firstMeasured = null;
+    for (let t = 100; t <= 5 * MIN; t += 100) {
+      const e = at(t, Math.floor(t / 600));
+      if (e.kind === 'rough' && firstRough === null) firstRough = t;
+      if (e.kind === 'measured' && firstMeasured === null) firstMeasured = t;
+    }
+    assert.notEqual(firstRough, null);
+    assert.ok(firstMeasured - firstRough >= 20_000);
+  });
+  it('a collapsing rate rises at most 20 % per 10 s', () => {
+    const { at } = clocked(3_000);
+    at(0, 0);
+    let shown;
+    for (let t = 100; t <= 4 * MIN; t += 100) shown = at(t, Math.floor(t / 600));
+    let after;
+    for (let t = 4 * MIN + 100; t <= 4 * MIN + 10_000; t += 100) after = at(t, 400);
+    assert.ok(after.high <= Math.ceil((shown.high * 1.2) / 5) * 5);
+  });
+  it('keeps a bounded history on a long run', () => {
+    const { est, at } = clocked(1_000_000);
+    at(0, 0);
+    for (let t = 100; t <= 60 * MIN; t += 100) at(t, Math.floor(t / 10));
+    assert.ok(est.samplesKept() < 30);
+  });
+});

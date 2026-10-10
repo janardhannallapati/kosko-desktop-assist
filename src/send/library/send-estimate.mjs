@@ -5,6 +5,9 @@ const MIN = 60_000;
 const QUIET_MS = MIN;
 const QUIET_SHARE = 0.05;
 const WINDOW_MS = 2 * MIN;
+// One accepted sample per 10 s, whatever the caller's cadence (the page flushes every 100 ms): the 20 % rise cap and
+// the "3 estimates agree" check are per accepted sample, so per 10 s — never compounding per call (review, 2026-10-10).
+const SAMPLE_MS = 10_000;
 const STABLE_SAMPLES = 3;
 const STABLE_RATIO = 1.25;
 const SPREAD = 0.2;
@@ -33,13 +36,23 @@ export function createEstimator({ totalNotes, totalBytes = 0, now = () => Date.n
   const recent = [];
   let measured = false;
   let shown = null; // the last high (or rough minutes) put on screen
+  let last = { kind: 'none' };
 
   const damp = (m) => (shown === null ? m : Math.min(m, shown * MAX_RISE));
 
   return {
+    samplesKept: () => samples.length,
     sample({ notes, bytes = 0 }) {
       const t = now();
+      // While nothing is shown yet every sample counts, so the estimate appears the moment the quiet period ends.
+      if (last.kind !== 'none' && t - samples.at(-1).t < SAMPLE_MS) return last;
       samples.push({ t, notes, bytes });
+      // Keep the first sample (the overall average) and only what the rolling window can still use.
+      while (samples.length > 2 && samples[1].t < t - WINDOW_MS - SAMPLE_MS) samples.splice(1, 1);
+      last = this.decide(t, notes, bytes);
+      return last;
+    },
+    decide(t, notes, bytes) {
       const first = samples[0];
       const left = { notesLeft: Math.max(0, totalNotes - notes), bytesLeft: Math.max(0, totalBytes - bytes) };
       if (t - first.t < QUIET_MS || notes < totalNotes * QUIET_SHARE || notes <= 0) return { kind: 'none' };

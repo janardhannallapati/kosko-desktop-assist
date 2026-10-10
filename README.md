@@ -17,7 +17,7 @@ Evernote gives formatted notes only on paid plans, so there are two routes:
   Evernote export (`.enex` files) dropped on Kosko's [Import page](https://kosko.app/import), which formats those
   same notes in place, without making copies.
 
-Start without git or a clone, on the computer where Evernote is installed (Node.js 22 or newer):
+Start without git or a clone, on the computer where Evernote is installed (Node.js 22.16 or newer):
 
 ```sh
 npx https://github.com/janardhannallapati/kosko-desktop-assist/archive/refs/heads/main.tar.gz dry-run --out kosko-plan

@@ -50,6 +50,8 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
   const out = progressOut ?? (log === stdoutLog ? process.stdout
     : { isTTY: false, write: (text) => text.split('\n').filter(Boolean).forEach((l) => log(l)) });
   let progress = null;
+  // Ctrl-C: the drawn lines go before anything else is printed (the command writes "Stopping…" after aborting).
+  signal?.addEventListener('abort', () => progress?.clear(), { once: true });
   const rawLog = log;
   log = (line) => { progress?.clear(); rawLog(line); };
   let plan;
@@ -202,7 +204,8 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
     const sendOcr = createOcrSender({ api, sender, jobId, cp, plan });
     await sendOcr(resumed);
     saveCheckpoint(planPath, cp);
-    progress = createSendProgress({ total: plan.notes.length, totalBytes: info.reduce((t, x) => t + sizeOf(x), 0), out, now });
+    progress = createSendProgress({ total: plan.notes.length, totalBytes: info.reduce((t, x) => t + sizeOf(x), 0), out, now,
+      start: { settled: tally.counts().settled, bytes: bytesDone } });
     const progressState = () => ({
       settled: tally.counts().settled, notes: tally.counts().notes, bytes: bytesDone,
       notebook: lastParent ? { name: nbName.get(lastParent) ?? '', index: placeOf.get(lastParent) ?? 0, count: notebookKeys.length } : null

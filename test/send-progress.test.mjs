@@ -74,3 +74,23 @@ test('a short run off a terminal still prints its final lines (benign)', () => {
   p.finish(state({ settled: 3, notes: { created: 3, updated: 0, skipped: 0, not_imported: 0 } }));
   assert.match(out.text(), /^Sent 3 of 3 notes \(100 %\): 3 created/m);
 });
+
+test('a terminal narrower than a line: each line is cut to fit, so the two-line erase always removes it (review)', () => {
+  const out = { isTTY: true, columns: 40, writes: [], write(s) { this.writes.push(s); return true; } };
+  const p = createSendProgress({ total: 5532, out, now: () => 0 });
+  p.update(state());
+  const drawn = out.writes.at(-1).split('\n');
+  assert.equal(drawn.length, 2);
+  for (const line of drawn) assert.ok([...line].length <= 39, line);
+  assert.match(drawn[0], /…$/);
+});
+
+test('the quiet first minute counts from when sending starts, including notes a resumed run had already settled', () => {
+  let t = 0;
+  const out = stream(false);
+  const p = createSendProgress({ total: 1000, out, now: () => t, start: { settled: 400, bytes: 0 } });
+  t = 61_000;
+  p.update(state({ settled: 500 }));
+  p.finish(state({ settled: 500 }));
+  assert.match(out.text(), /notebook 312 of 579 · /, 'an estimate exists one minute after the start, not one minute after the first batch');
+});
