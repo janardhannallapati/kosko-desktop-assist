@@ -19,7 +19,8 @@ export async function runSendCommand({ plan, app, dataDir, account, evernote = f
     if (evernote && !(Number.isInteger(loopback) && loopback >= 1024 && loopback <= 65535)) throw new Error('--port must be a number from 1024 to 65535.');
     const token = await readToken({ env, stdin, stderr });
     const ac = new AbortController();
-    const onSigint = () => { stderr.write('\nStopping after the current request…\n'); ac.abort(); };
+    // Abort first: the send clears its in-place progress lines on abort, so this message lands on a clean line (528).
+    const onSigint = () => { ac.abort(); stderr.write('\nStopping after the current request…\n'); };
     process.once('SIGINT', onSigint);
     try {
       // 512: --evernote fetches formatted bodies from Evernote's MCP server (sign-in through the browser, on 127.0.0.1:<port>).

@@ -7,6 +7,24 @@ Moves a whole Evernote account into [Kosko](https://kosko.app) from your own com
   Evernote once (read-only access).
 - Before anything is sent, it writes the exact plan to disk, so you can inspect it.
 
+## Which route fits your Evernote plan
+
+Evernote gives formatted notes only on paid plans, so there are two routes:
+
+- **Paid plan:** this tool, in one run. Sign in to Evernote once (`send --evernote`) and every note arrives
+  formatted, with its notebook, stack, tags, files and the words inside its images.
+- **Free plan:** this tool first (`send`), which brings every note as plain text with everything else above; then an
+  Evernote export (`.enex` files) dropped on Kosko's [Import page](https://kosko.app/import), which formats those
+  same notes in place, without making copies.
+
+Start without git or a clone, on the computer where Evernote is installed (Node.js 22.16 or newer):
+
+```sh
+npx https://github.com/janardhannallapati/kosko-desktop-assist/archive/refs/heads/main.tar.gz dry-run --out kosko-plan
+```
+
+The first step sends nothing: it writes a plan you can read in the `kosko-plan` folder. Signed installers come later.
+
 **Status: early development.** Today it contains:
 
 - `accounts`: lists the Evernote accounts on this computer (user id, database size, last written). It reads file
