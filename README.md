@@ -19,8 +19,9 @@ Evernote gives formatted notes only on paid plans, so there are two routes:
 
 ## Download
 
-Each [release](https://github.com/janardhannallapati/kosko-desktop-assist/releases) has one file per computer, with
-nothing to install first (Node.js is inside it):
+No release has been published yet. Once a release is published, its page under
+[Releases](https://github.com/janardhannallapati/kosko-desktop-assist/releases) has one file per computer, with nothing
+to install first (Node.js is inside it):
 
 - Windows: `kosko-assist-windows-x64.exe`
 - Mac with Apple silicon (M1 or later): `kosko-assist-macos-arm64`
@@ -93,8 +94,14 @@ npm test
 without testing) and runs it through the CLI's main paths. The release workflow does the same on Windows and macOS
 when a `v<version>` tag is pushed.
 
-Requires Node 22.16 or later (for `node:sqlite`'s backup API). One dependency, `@kosko-app/enex-core` (Tiptap is a
-development dependency, for the tests that prove each note fits the schema).
+Requires Node 22.16 or later (for `node:sqlite`'s backup API). The runtime dependencies, each pinned to an exact version:
+
+- `@kosko-app/enex-core`: the ENML converter, the `fp1` fingerprint and the note schema (it brings `sax` and
+  `hash-wasm`);
+- the `@tiptap/*` packages (3.30.5): enex-core's peers, which define the note schema the converter fills;
+- `jsdom` (29.1.1): the DOM the converter runs on, loaded only by `send --evernote` and `convert-enml`.
+
+`esbuild` and `postject` are development dependencies, used only to build the single executable.
 
 Licensed under the Apache License, Version 2.0 (see `LICENSE`).
 
