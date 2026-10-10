@@ -4,7 +4,7 @@
 // keeps the checkpoint, so the next run continues where this one stopped.
 import { pickAccount } from '../../plan/dry-run.mjs';
 import { openAccount } from '../../reader/reader.mjs';
-import { createImportApi } from '../api.mjs';
+import { createImportApi, appOrigin } from '../api.mjs';
 import { createSender } from '../sender.mjs';
 import { startThroughGate } from '../gate.mjs';
 import { SendStopped } from '../errors.mjs';
@@ -18,6 +18,8 @@ import { createTally, emptyAttachmentCounts } from './tally.mjs';
 import { createNoteSender } from './send-notes.mjs';
 import { createOcrSender, ocrCounts } from './send-ocr.mjs';
 import { createLinkLedger } from './note-links.mjs';
+import { routePreamble } from './routes.mjs';
+import { createSendProgress } from './send-progress.mjs';
 import { prepareEvernote, createBodyPreparer, bodyCounts, fileCounts, FREE_PLAN_SENTENCE } from './evernote-route.mjs';
 
 const BATCH_NOTES = 25; // Kosko 434 r1: 25 notes or 3.5 MB of JSON per batch
@@ -26,6 +28,7 @@ const TAG_CALL = 1000; // 464
 const UPLOAD_LANES = 4;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const num = (n) => Number(n).toLocaleString('en-US');
+const stdoutLog = (line) => process.stdout.write(`${line}\n`);
 
 async function countCheck({ plan, dataDir, accountId, open, tmpRoot }) {
   const { account } = pickAccount(dataDir, accountId ?? plan.source?.userId);
@@ -40,7 +43,15 @@ async function countCheck({ plan, dataDir, accountId, open, tmpRoot }) {
  * `send --evernote`: formatted bodies from Evernote's MCP server, upgrading notes Kosko already holds in place.
  */
 export async function runSend({ planPath, app, token, dataDir, accountId, fetch, signal, tmpRoot, sleep, random, now,
-  log = (line) => process.stdout.write(`${line}\n`), open = openAccount, batchNotes = BATCH_NOTES, evernote = null }) {
+  log = stdoutLog, open = openAccount, batchNotes = BATCH_NOTES, evernote = null, progressOut }) {
+  // 528: the running lines. On the real terminal they redraw in place; under an injected `log` (tests, a caller that
+  // collects lines) they arrive as plain lines through that log. Any other line clears them first, so nothing is
+  // drawn over.
+  const out = progressOut ?? (log === stdoutLog ? process.stdout
+    : { isTTY: false, write: (text) => text.split('\n').filter(Boolean).forEach((l) => log(l)) });
+  let progress = null;
+  const rawLog = log;
+  log = (line) => { progress?.clear(); rawLog(line); };
   let plan;
   let resourceCacheDir;
   try {
@@ -51,6 +62,8 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
       return { exitCode: 1 };
     }
     resourceCacheDir = checked.resourceCacheDir;
+    // 528 rule 1: both routes, before any sign-in or request — the tool cannot know the plan until Evernote answers.
+    log(routePreamble({ evernote: Boolean(evernote), origin: appOrigin(app) }));
   } catch (e) {
     log(redact(e.message));
     return { exitCode: 1 };
@@ -136,13 +149,21 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
     const attsOf = new Map();
     for (const a of plan.attachments) { if (!attsOf.has(a.noteId)) attsOf.set(a.noteId, []); attsOf.get(a.noteId).push(a); }
     const nbName = new Map(entries.map((e) => [e.key, e.name]));
+    // 528 rule 2: where a notebook sits among the plan's notebooks (stacks are not notebooks) for the "Now:" line.
+    const notebookKeys = entries.filter((e) => !e.key.startsWith('stack:')).map((e) => e.key);
+    const placeOf = new Map(notebookKeys.map((k, i) => [k, i + 1]));
     const info = await Promise.all(plan.notes.map(async (note, i) => {
       const atts = (attsOf.get(note.id) ?? []).map((a) => ({ a, d: decideAttachment(a, allowance) }));
       const tags = tagsOf.get(note.id) ?? [];
       const version = await versionOf(note, tags, [...new Set(atts.map(({ a }) => a.dataHash))]);
       return { note, key: note.id, fp: fps[i], parentKey: parentKeyOf(note), tags, atts, version, plainVersion: version };
     }));
+    const sizeOf = (x) => x.atts.reduce((t, { a }) => t + (Number(a.actualSize ?? a.size) || 0), 0);
+    let bytesDone = 0;
+    let lastParent = null;
     const settle = (x, outcome, reason) => {
+      bytesDone += sizeOf(x);
+      lastParent = x.parentKey;
       x.outcome = outcome;
       const counts = emptyAttachmentCounts();
       const missingFiles = [];
@@ -181,6 +202,11 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
     const sendOcr = createOcrSender({ api, sender, jobId, cp, plan });
     await sendOcr(resumed);
     saveCheckpoint(planPath, cp);
+    progress = createSendProgress({ total: plan.notes.length, totalBytes: info.reduce((t, x) => t + sizeOf(x), 0), out, now });
+    const progressState = () => ({
+      settled: tally.counts().settled, notes: tally.counts().notes, bytes: bytesDone,
+      notebook: lastParent ? { name: nbName.get(lastParent) ?? '', index: placeOf.get(lastParent) ?? 0, count: notebookKeys.length } : null
+    });
     const pending = info.filter((x) => !tally.settledKeys.has(x.key));
     for (let i = 0; i < pending.length;) {
       const batch = [];
@@ -195,9 +221,11 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
       saveCheckpoint(planPath, cp); // the notes are settled even if their image text is not yet
       await sendOcr(batch);
       saveCheckpoint(planPath, cp);
-      log(`Sent ${num(tally.counts().settled)} of ${num(plan.notes.length)} notes.`);
+      progress.update(progressState());
     }
 
+    progress.finish(progressState());
+    progress = null;
     const { notes, settled } = tally.counts();
     const allSettled = settled === plan.notes.length;
     const linkReport = links?.report();
@@ -227,6 +255,8 @@ export async function runSend({ planPath, app, token, dataDir, accountId, fetch,
       + `${num(settled)} of ${num(plan.notes.length)} notes accounted for.\nReceipt: ${api.origin}/import/receipt/${jobId}`);
     return { exitCode: allSettled ? 0 : 1, jobId, summary, receipt };
   } catch (e) {
+    // 528: the counts so far stay on screen above why it stopped.
+    const shown = progress; progress = null; shown?.finish();
     if (!(e instanceof SendStopped)) { log(redact(`The import stopped: ${e.message}`)); }
     else log(redact(e.message));
     if (cp) { try { saveCheckpoint(planPath, cp); } catch { /* the checkpoint is a convenience; the ledger is the truth */ } }

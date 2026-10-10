@@ -246,3 +246,25 @@ test('an answer that is neither an outcome nor an error is sent again, never set
   assert.equal(r.exitCode, 0, r.out);
   assert.deepEqual(s.kosko.job(r.jobId).summary.notes, { created: 4, updated: 0, skipped: 0, not_imported: 0 });
 });
+
+// 528 rules 1-3 (Kosko doc 528): both routes are named before the first request, and the run's output carries the
+// running counts (as plain lines when the output is not a terminal) above the unchanged Done line.
+test('send names both routes before its first request, then shows its counts above Done', async () => {
+  const s = await setup();
+  const lines = [];
+  let firstRequestAt = null;
+  const fetch = async (...a) => { firstRequestAt ??= lines.length; return s.kosko.fetch(...a); };
+  const r = await runSend({ planPath: s.planPath, app: APP, token: TOKEN, dataDir: s.acct.dataDir, fetch,
+    tmpRoot: mkdtempSync(join(tmpdir(), 'kda-snap-')), log: (l) => lines.push(l), sleep: async () => {}, random: () => 0 });
+  assert.equal(r.exitCode, 0, lines.join('\n'));
+  const preamble = lines.findIndex((l) => l.startsWith('Two ways in, depending on your Evernote plan:'));
+  assert.ok(preamble >= 0 && preamble < firstRequestAt, 'the routes come before anything is sent');
+  assert.match(lines[preamble], /This run: plain text \(no --evernote\)\.$/);
+  assert.match(lines[preamble], /drop\n {2}the files on https:\/\/kosko\.test\/import:/);
+  const counts = lines.findIndex((l) => /^Sent 4 of 4 notes \(100 %\): 4 created, 0 updated, 0 already in Kosko$/.test(l));
+  const done = lines.findIndex((l) => l.startsWith('Done: 4 created'));
+  assert.ok(counts > preamble && counts < done, lines.join('\n'));
+  assert.match(lines[counts + 1], /^Now: .+, notebook \d+ of \d+$/);
+  assert.equal(lines.filter((l) => /^Sent \d+ of \d+ notes\.$/.test(l)).length, 0, 'the old line per batch is gone');
+  assert.doesNotMatch(lines.join('\n'), /\x1b/, 'no control characters off a terminal');
+});
