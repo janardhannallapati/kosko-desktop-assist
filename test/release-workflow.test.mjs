@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { exeName, seaConfig, SEA_FUSE } from '../scripts/build-sea.mjs';
+import { BUILD_NODE, checkBuildNode, exeName, seaConfig, SEA_FUSE } from '../scripts/build-sea.mjs';
 
 const WF = readFileSync(new URL('../.github/workflows/release-binaries.yml', import.meta.url), 'utf8');
 const README = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
@@ -66,10 +66,36 @@ test('the README tells how to download and open an unsigned build, and keeps npx
   const download = README.slice(README.indexOf('## Download'), README.indexOf('\n## ', README.indexOf('## Download') + 1));
   assert.ok(download.length > 200, 'a Download section');
   assert.match(download, /github\.com\/janardhannallapati\/kosko-desktop-assist\/releases/);
+  // No promise that a file exists before a release is published (the workflow makes drafts).
+  assert.match(download, /No release has been published yet|Once a release is published/);
+  assert.doesNotMatch(download, /Each \[release\]\(/);
   assert.match(download, /\*\*More info\*\*, then \*\*Run anyway\*\*/);
   assert.match(download, /System Settings → Privacy & Security/);
   assert.match(download, /\*\*Open Anyway\*\*/);
   assert.match(download, /not signed/);
   assert.match(download, /Signed installers come before the public launch/);
   assert.match(README, /npx https:\/\/github\.com\/janardhannallapati\/kosko-desktop-assist\/archive\/refs\/heads\/main\.tar\.gz/);
+});
+
+test('the build runs on exactly the pinned Node, in CI and in the build script', () => {
+  assert.equal(BUILD_NODE, '22.23.3');
+  const pins = [...WF.matchAll(/node-version: (\S+)/g)].map((m) => m[1]);
+  assert.deepEqual(pins, [BUILD_NODE]);
+  assert.doesNotThrow(() => checkBuildNode(`v${BUILD_NODE}`));
+  for (const other of ['v22.23.2', 'v22.24.0', 'v24.1.0']) assert.throws(() => checkBuildNode(other), /22\.23\.3/, other);
+});
+
+test('the workflow refuses a tag whose commit is not on main', () => {
+  const build = WF.slice(WF.indexOf('\n  build:\n'), WF.indexOf('\n  release:\n'));
+  assert.match(build, /fetch-depth: 0/);
+  assert.match(build, /git fetch --no-tags origin \+refs\/heads\/main:refs\/remotes\/origin\/main/);
+  assert.match(build, /git merge-base --is-ancestor "\$GITHUB_SHA" origin\/main \|\| \{ echo "[^"]*not on main[^"]*"; exit 1; \}/);
+  // The check runs before anything is built.
+  assert.ok(build.indexOf('merge-base --is-ancestor') < build.indexOf('npm ci'));
+});
+
+test('the release is a draft the owner publishes by hand', () => {
+  const create = WF.slice(WF.indexOf('gh release create'));
+  assert.match(create, /--draft/);
+  assert.doesNotMatch(create, /--prerelease/);
 });

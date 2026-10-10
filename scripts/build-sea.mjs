@@ -19,6 +19,18 @@ import { parseArgs } from 'node:util';
 import { inject } from 'postject';
 import { bundle } from './sea-bundle.mjs';
 
+// The executable IS this node binary, so its version is pinned (owner decision 2026-10-10): 22.23.3, the newest 22.x,
+// released after the 22.23.2 security release, so it carries those fixes. The workflow installs exactly this one.
+export const BUILD_NODE = '22.23.3';
+
+/** Throws unless `version` (process.version's form) is the pinned build Node. */
+export function checkBuildNode(version = process.version) {
+  if (version !== `v${BUILD_NODE}`) {
+    throw new Error(`The executable is built from Node ${BUILD_NODE} exactly; this is ${version}. `
+      + `Install ${BUILD_NODE}, or change BUILD_NODE here and node-version in .github/workflows/release-binaries.yml together.`);
+  }
+}
+
 export const SEA_FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
 const OS_NAME = { win32: 'windows', darwin: 'macos', linux: 'linux' };
 
@@ -35,6 +47,7 @@ export function seaConfig(main, output) {
 }
 
 export async function buildSea({ out = 'dist', log = console.log } = {}) {
+  checkBuildNode();
   const dir = resolve(out);
   mkdirSync(dir, { recursive: true });
   const main = join(dir, 'kosko-assist.cjs');

@@ -3,7 +3,9 @@
 # executable is a copy of THAT runner's node binary, and each is run through test/sea/ there before it is uploaded.
 # The files are unsigned (an ad-hoc signature on macOS, no identity); the README's Download section says how to open them.
 #
-# Release: bump package.json's version, commit, push, then push a tag `v<version>`. Nothing else starts this workflow.
+# Release: bump package.json's version, merge to main, then push a tag `v<version>` on a commit of main. Nothing else
+# starts this workflow, and a tag off main is refused. The release is a DRAFT: the owner checks the Windows file, then
+# publishes it by hand on GitHub.
 name: release binaries
 
 on:
@@ -28,9 +30,16 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the whole history, so the ancestry check below can see main
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 22.23.3 # = BUILD_NODE in scripts/build-sea.mjs; the executable embeds this exact node
+      - name: The tagged commit is on main
+        shell: bash
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "tag $GITHUB_REF_NAME points at a commit not on main"; exit 1; }
       - name: Tag matches the package version
         shell: bash
         run: |
@@ -78,4 +87,4 @@ jobs:
           macOS: the first open is blocked; open System Settings, Privacy & Security, and choose Open Anyway.
           Check a download against SHA256SUMS.txt. Signed installers come before the public launch."
           gh release create "$GITHUB_REF_NAME" ./* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
-            --notes "$notes" --prerelease --verify-tag
+            --notes "$notes" --draft --verify-tag
