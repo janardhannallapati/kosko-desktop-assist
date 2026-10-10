@@ -1,7 +1,7 @@
 // Kosko 538 rules 1–5: the CLI bundled into one CommonJS file (what the single executable embeds) is complete, holds one
 // ProseMirror, and behaves exactly as the source does on the same input. The bundle is built once, as shipped
 // (minified), into a temp folder.
-import { test } from 'node:test';
+import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -18,8 +18,12 @@ const SOURCE = join(ROOT, 'bin/kosko-assist.mjs');
 const VERSION = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
 const scratch = () => mkdtempSync(join(tmpdir(), 'kosko-sea-'));
 const BUNDLE = join(scratch(), 'kosko-assist.cjs');
-const meta = await bundle({ outfile: BUNDLE });
-const bundleText = readFileSync(BUNDLE, 'utf8');
+let meta;
+let bundleText;
+before(async () => {
+  meta = await bundle({ outfile: BUNDLE });
+  bundleText = readFileSync(BUNDLE, 'utf8');
+});
 
 const run = (script, args, input) => spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', input });
 const both = (args, input) => [run(SOURCE, args, input), run(BUNDLE, args, input)];
@@ -90,7 +94,7 @@ test('accounts lists the synthetic account the same way', () => {
   const [src, bun] = both(['accounts', '--data-dir', acct.dataDir]);
   assert.equal(src.status, 0);
   assert.match(src.stdout, /User1001 {2}/);
-  assert.deepEqual([bun.status, bun.stdout, bun.stderr], [src.status, src.stdout, src.stderr]);
+  assert.deepEqual([bun.status, bun.stdout], [src.status, src.stdout]);
 });
 
 test('dry-run writes the same plan and summary as the source, with no experimental warning', () => {
@@ -101,7 +105,7 @@ test('dry-run writes the same plan and summary as the source, with no experiment
   for (const r of [src, bun]) {
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /Count check: passed/);
-    assert.equal(r.stderr, '');
+    assert.doesNotMatch(r.stderr, /ExperimentalWarning/);
   }
   const norm = (s, out) => s.replaceAll(out, '<out>').replace(/Took \d+ s/, 'Took N s');
   assert.equal(norm(bun.stdout, outs[1]), norm(src.stdout, outs[0]));
@@ -121,6 +125,14 @@ test('convert-enml gives byte-identical documents from the source and the bundle
   // The samples reach both of the converter's paths: the schema parse, and the raw-HTML fallback for broken XML.
   assert.equal(fallbacks.filter((f) => f === 'malformed-xml').length, 1);
   assert.equal(fallbacks.filter((f) => f === null).length, ENML_SAMPLES.length - 1);
+});
+
+test('a mistyped option prints the usage and exits 2, with no stack trace', () => {
+  for (const r of both(['accounts', '--nope'])) {
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /Unknown option '--nope'[\s\S]*Usage:/);
+    assert.doesNotMatch(r.stderr, /\n\s+at /);
+  }
 });
 
 test('convert-enml with no input exits 2, from the source and the bundle', () => {

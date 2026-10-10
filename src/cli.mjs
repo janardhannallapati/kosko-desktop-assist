@@ -44,8 +44,22 @@ on a free plan the tool says so and sends plain text.
 convert-enml reads one note's ENML on standard input and prints the document Kosko would store for it. It sends
 nothing; it is there to check a build on the computer it will run on.`;
 
+// A mistyped option: the message and the usage, exit 2, never a stack trace (the executable's users are not developers).
+function parseOr2(args, config) {
+  try {
+    return parseArgs({ args, ...config });
+  } catch (e) {
+    console.error(`${e.message}\n\n${USAGE}`);
+    process.exit(2);
+  }
+}
+
 /** Runs one command. Every path ends in process.exit(). */
 export async function main(argv) {
+  const [command, ...rest] = argv;
+  if (command === '--version' || command === '-v') { console.log(TOOL_VERSION); process.exit(0); }
+  if (command === '--help' || command === '-h' || command === 'help') { console.log(USAGE); process.exit(0); }
+  if (command === 'convert-enml') process.exit(await convertEnmlCommand(rest));
   // Loaded dynamically, AFTER the warning filter: a static import would link node:sqlite (and print its experimental
   // notice) before any module body here runs.
   const { runProbe } = await import('./mcp/probe.mjs');
@@ -56,10 +70,6 @@ export async function main(argv) {
   const { runConnect } = await import('./send/connect.mjs');
   const { runSendCommand } = await import('./send/send-command.mjs');
   const { redact } = await import('./send/token.mjs');
-  const [command, ...rest] = argv;
-  if (command === '--version' || command === '-v') { console.log(TOOL_VERSION); process.exit(0); }
-  if (command === '--help' || command === '-h' || command === 'help') { console.log(USAGE); process.exit(0); }
-  if (command === 'convert-enml') process.exit(await convertEnmlCommand(rest));
   // 466 rule 1: a token on the command line lands in shell history and process listings. Refused before anything runs.
   // 466 review M8: a token anywhere on the line (a bare word, after a mistyped flag) is refused the same way, unechoed.
   if (rest.some((a) => a === '--token' || a.startsWith('--token=') || /cvit_/i.test(a))) {
@@ -89,7 +99,7 @@ export async function main(argv) {
     process.exit(await runConnect({ app: values.app }));
   }
   if (command === 'accounts') {
-    const { values } = parseArgs({ args: rest, options: { 'data-dir': { type: 'string' } } });
+    const { values } = parseOr2(rest, { options: { 'data-dir': { type: 'string' } } });
     const dirs = findDataDirs({ dataDir: values['data-dir'] });
     if (!dirs.length) { console.error('No Evernote data folder found. Pass --data-dir <folder>.'); process.exit(1); }
     for (const dir of dirs) {
@@ -104,7 +114,7 @@ export async function main(argv) {
     process.exit(0);
   }
   if (command === 'dry-run') {
-    const { values } = parseArgs({ args: rest, options: { out: { type: 'string' }, 'data-dir': { type: 'string' }, account: { type: 'string' } } });
+    const { values } = parseOr2(rest, { options: { out: { type: 'string' }, 'data-dir': { type: 'string' }, account: { type: 'string' } } });
     if (!values.out) { console.error(USAGE); process.exit(2); }
     const [dataDir] = findDataDirs({ dataDir: values['data-dir'] });
     if (!dataDir) { console.error('No Evernote data folder found. Pass --data-dir <folder>.'); process.exit(1); }
@@ -117,7 +127,7 @@ export async function main(argv) {
     }
   }
   if (command === 'match') {
-    const { values, positionals } = parseArgs({ args: rest, allowPositionals: true,
+    const { values, positionals } = parseOr2(rest, { allowPositionals: true,
       options: { out: { type: 'string' }, 'data-dir': { type: 'string' }, account: { type: 'string' } } });
     if (!positionals.length) { console.error(USAGE); process.exit(2); }
     const [dataDir] = findDataDirs({ dataDir: values['data-dir'] });
@@ -147,8 +157,7 @@ export async function main(argv) {
     process.exit(code);
   }
   if (command !== 'probe-mcp') { console.error(USAGE); process.exit(command ? 2 : 0); }
-  const { values } = parseArgs({
-    args: rest,
+  const { values } = parseOr2(rest, {
     options: {
       out: { type: 'string' }, port: { type: 'string', default: '8765' },
       'max-notes': { type: 'string' }, 'max-minutes': { type: 'string', default: '60' },
@@ -174,13 +183,14 @@ export async function main(argv) {
 // 538 rule 5: stdin -> the converted document as JSON on stdout. Exit 0 when it converted, 1 when the converter refused,
 // 2 on no input. The same createConverter the --evernote route uses.
 async function convertEnmlCommand(rest) {
-  if (rest.length) { console.error(USAGE); return 2; }
+  if (rest.length || process.stdin.isTTY) { console.error(`convert-enml reads the ENML from a file or a pipe.\n\n${USAGE}`); return 2; }
   const chunks = [];
   for await (const c of process.stdin) chunks.push(c);
   const enml = Buffer.concat(chunks).toString('utf8');
   if (!enml.trim()) { console.error('convert-enml: no ENML on standard input.'); return 2; }
   const { createConverter } = await import('./send/library/formatted-body.mjs');
   const result = (await createConverter())(enml);
-  process.stdout.write(`${JSON.stringify(result)}\n`);
+  // Wait for the write to finish: process.exit() right after a large write to a pipe can cut it short (macOS, Windows).
+  await new Promise((done) => process.stdout.write(`${JSON.stringify(result)}\n`, done));
   return result.ok ? 0 : 1;
 }

@@ -4,6 +4,6 @@ import '../quiet-sqlite-warning.mjs';
 import { main } from '../cli.mjs';
 
 main(process.argv.slice(2)).catch((e) => {
-  console.error(e);
+  console.error(`kosko-assist: ${e?.message ?? e}`); // the message, not a stack of bundle line numbers
   process.exit(1);
 });

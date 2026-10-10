@@ -12,9 +12,9 @@
 // added after it, which Apple silicon needs to run the file at all.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, copyFileSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { inject } from 'postject';
 import { bundle } from './sea-bundle.mjs';
@@ -66,7 +66,7 @@ export async function buildSea({ out = 'dist', log = console.log } = {}) {
   return { exe, main, sha256 };
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const { values } = parseArgs({ options: { out: { type: 'string', default: 'dist' } } });
   await buildSea({ out: values.out });
 }
