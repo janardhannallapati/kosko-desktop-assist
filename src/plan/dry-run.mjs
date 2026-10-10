@@ -1,6 +1,6 @@
 // The dry run: read the whole account, write the exact plan to a folder the user chose, and prove the reading is
 // complete by comparing what was written with the reader's separate count(*) queries. Sends nothing.
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 import { registerCleanup } from '../reader/snapshot.mjs';
@@ -9,8 +9,8 @@ import { listAccounts } from '../reader/locate.mjs';
 import { openAccount } from '../reader/reader.mjs';
 import { JsonObjectWriter } from './json-stream.mjs';
 import { renderSummary } from './summary.mjs';
+import { TOOL_VERSION } from '../version.mjs';
 
-const TOOL_VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
 // The numbers that are both written to the plan and counted by the reader (457 rule 4).
 const CHECKED = ['notes', 'notesWithoutNotebook', 'emptyPlainText', 'notebooks', 'stacks', 'tags', 'noteTags',
   'attachments', 'attachmentBytes', 'ocr'];
