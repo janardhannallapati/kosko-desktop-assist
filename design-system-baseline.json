@@ -1,0 +1,5 @@
+{
+  "$description": "Today's design-system violations per file × rule (@kosko-app/design-tokens). The gate fails only above these counts. Written ONLY by `kosko-ds-check --write-baseline`, which refuses to raise any count. Never edit by hand.",
+  "total": 0,
+  "counts": {}
+}

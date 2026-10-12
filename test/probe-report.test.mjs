@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, access } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, access, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runProbe, fillTemplate, noteFingerprint, normaliseEnml } from '../src/mcp/probe.mjs';
@@ -50,12 +50,16 @@ async function probeRun(maxNotes, extra = {}) {
   const state = new URL(signIn.trim()).searchParams.get('state');
   await until(() => fetch(`http://127.0.0.1:${port}/callback?code=CODE-SECRET-99&state=${state}`));
   await until(() => access(path.join(outDir, 'tools.json')));
-  await writeFile(path.join(outDir, 'plan.json'), JSON.stringify({ run: {
+  // Written to a temp name, then renamed: the probe polls for plan.json and consumes it on sight, so a plain writeFile
+  // could be read half-written (empty), ignored as not JSON, and leave the probe waiting out its whole plan window.
+  // First seen in CI (content-vault 605, 2026-10-12): 0 notes listed after a 60 s wait.
+  await writeFile(path.join(outDir, 'plan.tmp'), JSON.stringify({ run: {
     list: { tool: 'search_notes', args: { query: '' }, idKey: 'guid' },
     note: { tool: 'get_note', idArg: 'noteGuid' },
     attachment: { tool: 'get_attachment', every: 2, resourcesKey: 'resources', args: { noteGuid: '$note', hash: '$r.hash' } },
     ...extra
   } }));
+  await rename(path.join(outDir, 'plan.tmp'), path.join(outDir, 'plan.json'));
   const report = await done;
   return { report, outDir, logs };
 }

@@ -11,7 +11,8 @@
     "node": ">=22.16"
   },
   "scripts": {
-    "test": "node --no-warnings=ExperimentalWarning --test test/*.test.mjs",
+    "test": "kosko-ds-check && node --no-warnings=ExperimentalWarning --test test/*.test.mjs",
+    "ds:check": "kosko-ds-check",
     "test:core": "npm --prefix packages/enex-core test",
     "test:all": "npm test && npm run test:core",
     "build:sea": "node scripts/build-sea.mjs",
@@ -34,6 +35,7 @@
     "jsdom": "29.1.1"
   },
   "devDependencies": {
+    "@kosko-app/design-tokens": "0.1.1",
     "esbuild": "0.28.2",
     "postject": "1.0.0-alpha.6"
   }

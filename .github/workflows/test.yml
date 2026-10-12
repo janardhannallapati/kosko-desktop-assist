@@ -1,0 +1,30 @@
+# Runs `npm test` on every pull request and on every push to main (Kosko content-vault 605). `npm test` starts with the
+# design-system check from @kosko-app/design-tokens (pinned exactly), so a raw colour, font name, typed size or
+# hand-drawn icon in src/ or bin/ turns this red, naming the file, the line and the token to use. Then the unit tests.
+# GitHub-hosted: this repository is public, so it costs no Actions minutes.
+name: test
+
+"on":
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.23.3
+      - run: npm ci
+      - run: npm test

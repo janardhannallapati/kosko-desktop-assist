@@ -1,0 +1,7 @@
+{
+  "$description": "@kosko-app/design-tokens' design-system check over kosko-desktop-assist (content-vault 605). No UI yet: the CLI's own code is in scope so the first window, page or styled output is checked from its first line. The rules are the package's; the design values come from content-vault's design/ through the pinned package.",
+  "channels": {
+    "cli": { "dirs": ["src", "bin"], "extensions": [".mjs", ".js", ".html", ".css"], "platform": "web" }
+  },
+  "baseline": "design-system-baseline.json"
+}

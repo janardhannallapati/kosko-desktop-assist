@@ -102,6 +102,10 @@ Requires Node 22.16 or later (for `node:sqlite`'s backup API). The runtime depen
 - `jsdom` (29.1.1): the DOM the converter runs on, loaded only by `send --evernote` and `convert-enml`.
 
 `esbuild` and `postject` are development dependencies, used only to build the single executable.
+`@kosko-app/design-tokens` (pinned exactly) is one too: Kosko's design system and its check. `npm test` runs
+`kosko-ds-check` first, over `src/` and `bin/` (`kosko-ds.config.json`), so a raw colour, font name, typed size or
+hand-drawn icon fails the suite and the pull-request workflow, naming the token to use. Kosko's colours, sizes and
+icons come from that package, never typed here; a design change arrives as a pin bump.
 
 Licensed under the Apache License, Version 2.0 (see `LICENSE`).
 
