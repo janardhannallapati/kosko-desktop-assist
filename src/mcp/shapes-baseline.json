@@ -1,0 +1,320 @@
+{
+  "format": "kosko-shapes-baseline",
+  "version": 1,
+  "server": {
+    "types": [
+      "object"
+    ],
+    "keys": {
+      "capabilities": {
+        "types": [
+          "object"
+        ],
+        "keys": {
+          "tools": {
+            "types": [
+              "object"
+            ],
+            "keys": {}
+          }
+        }
+      },
+      "protocolVersion": {
+        "types": [
+          "string"
+        ]
+      },
+      "serverInfo": {
+        "types": [
+          "object"
+        ],
+        "keys": {
+          "name": {
+            "types": [
+              "string"
+            ]
+          },
+          "version": {
+            "types": [
+              "string"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "tools": {
+    "search_notes": {
+      "properties": [
+        "ascending",
+        "clientTimeZone",
+        "fullBooleanSearch",
+        "maxResults",
+        "query",
+        "sortBy",
+        "startIndex"
+      ],
+      "required": [
+        "query"
+      ]
+    },
+    "get_note": {
+      "properties": [
+        "noteId"
+      ],
+      "required": [
+        "noteId"
+      ]
+    },
+    "get_attachment": {
+      "properties": [
+        "hash",
+        "noteId"
+      ],
+      "required": [
+        "hash",
+        "noteId"
+      ]
+    }
+  },
+  "results": {
+    "get_attachment": {
+      "types": [
+        "object"
+      ],
+      "keys": {
+        "expiresAt": {
+          "types": [
+            "string"
+          ]
+        },
+        "url": {
+          "types": [
+            "string"
+          ]
+        }
+      }
+    },
+    "get_note": {
+      "types": [
+        "object"
+      ],
+      "keys": {
+        "active": {
+          "types": [
+            "boolean"
+          ]
+        },
+        "attributes": {
+          "types": [
+            "object"
+          ],
+          "keys": {
+            "author": {
+              "types": [
+                "null"
+              ]
+            },
+            "isTemplate": {
+              "types": [
+                "boolean"
+              ]
+            },
+            "placeName": {
+              "types": [
+                "null"
+              ]
+            },
+            "reminderDoneTime": {
+              "types": [
+                "null"
+              ]
+            },
+            "reminderTime": {
+              "types": [
+                "null"
+              ]
+            },
+            "sourceApplication": {
+              "types": [
+                "null"
+              ]
+            },
+            "sourceUrl": {
+              "types": [
+                "null"
+              ]
+            }
+          }
+        },
+        "content": {
+          "types": [
+            "string"
+          ]
+        },
+        "created": {
+          "types": [
+            "string"
+          ]
+        },
+        "deleted": {
+          "types": [
+            "null"
+          ]
+        },
+        "id": {
+          "types": [
+            "string"
+          ]
+        },
+        "notebookId": {
+          "types": [
+            "string"
+          ]
+        },
+        "resources": {
+          "types": [
+            "array"
+          ],
+          "items": {
+            "types": [
+              "object"
+            ],
+            "keys": {
+              "hash": {
+                "types": [
+                  "string"
+                ]
+              },
+              "id": {
+                "types": [
+                  "string"
+                ]
+              },
+              "mime": {
+                "types": [
+                  "string"
+                ]
+              },
+              "name": {
+                "types": [
+                  "string"
+                ]
+              },
+              "sizeBytes": {
+                "types": [
+                  "number"
+                ]
+              }
+            }
+          }
+        },
+        "tags": {
+          "types": [
+            "array"
+          ]
+        },
+        "tasks": {
+          "types": [
+            "array"
+          ]
+        },
+        "title": {
+          "types": [
+            "string"
+          ]
+        },
+        "updateSequenceNumber": {
+          "types": [
+            "number"
+          ]
+        },
+        "updated": {
+          "types": [
+            "string"
+          ]
+        },
+        "version": {
+          "types": [
+            "number"
+          ]
+        }
+      }
+    },
+    "search_notes": {
+      "types": [
+        "object"
+      ],
+      "keys": {
+        "hits": {
+          "types": [
+            "array"
+          ],
+          "items": {
+            "types": [
+              "object"
+            ],
+            "keys": {
+              "createdAt": {
+                "types": [
+                  "string"
+                ]
+              },
+              "noteId": {
+                "types": [
+                  "string"
+                ]
+              },
+              "score": {
+                "types": [
+                  "number"
+                ]
+              },
+              "snippet": {
+                "types": [
+                  "string"
+                ]
+              },
+              "title": {
+                "types": [
+                  "string"
+                ]
+              },
+              "updatedAt": {
+                "types": [
+                  "string"
+                ]
+              }
+            }
+          }
+        },
+        "isLastPage": {
+          "types": [
+            "boolean"
+          ]
+        },
+        "startIndex": {
+          "types": [
+            "number"
+          ]
+        },
+        "totalResultCount": {
+          "types": [
+            "number"
+          ]
+        }
+      }
+    }
+  },
+  "envelopes": {
+    "get_attachment": [
+      "structuredContent+text"
+    ],
+    "get_note": [
+      "structuredContent+text"
+    ],
+    "search_notes": [
+      "structuredContent+text"
+    ]
+  }
+}

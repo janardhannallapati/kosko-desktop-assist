@@ -22,6 +22,10 @@
 // - 513: get_attachment's signed URL, 300 s, no auth header (461). `staleUrls` answers that many URLs already expired;
 //   `forbidDownloads` answers that many downloads 403, as an expired signature does. Every download is recorded with
 //   whether it carried an Authorization header (`state.downloads`).
+// - 537: `alter` changes what the fake answers, for the shape check's drift cases: `alter.tools(tools)` edits
+//   tools/list, `alter[<tool>](data)` edits one tool's successful result. `refuseRefresh` answers every refresh_token
+//   grant invalid_grant, as a revoked grant would. `refuseTools` answers those tools with isError, as a server that
+//   rejects an argument would.
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -37,7 +41,8 @@ const iso = (ms) => new Date(ms).toISOString(); // 24 characters, ms precision, 
  * files: Map md5 -> Uint8Array, served by get_attachment's signed URL.
  */
 export function createFakeMcp({ notes = [], files = new Map(), extra = [], missing = [], freePlan = null, limitOn = [],
-  sse = false, accessTtl = 3600, origin = 'https://mcp.evernote.test', now = Date.now, omitTools = [], staleUrls = 0, forbidDownloads = 0 } = {}) {
+  sse = false, accessTtl = 3600, origin = 'https://mcp.evernote.test', now = Date.now, omitTools = [], staleUrls = 0, forbidDownloads = 0,
+  alter = {}, refuseRefresh = false, refuseTools = [] } = {}) {
   const state = {
     notes: new Map(notes.map((n) => [n.guid, n])), files, extra: [...extra], missing: new Set(missing), freePlan,
     limitOn: new Set(limitOn), sse,
@@ -56,6 +61,12 @@ export function createFakeMcp({ notes = [], files = new Map(), extra = [], missi
   const toolError = (text) => ({ content: [{ type: 'text', text }], isError: true });
 
   function callTool(name, args = {}) {
+    if (refuseTools.includes(name)) { state.calls.push({ tool: name, at: now(), refused: true }); return toolError(`Invalid arguments for ${name}`); }
+    const r = answerTool(name, args);
+    return !r.isError && alter[name] ? toolResult(alter[name](structuredClone(r.structuredContent))) : r;
+  }
+
+  function answerTool(name, args = {}) {
     state.calls.push({ tool: name, at: now(), noteId: args?.noteId ?? null, hash: args?.hash ?? null });
     if (state.freePlan === 'tool') return toolError('MCP access requires an Evernote Personal or Professional plan. Upgrade to continue.');
     if (name === 'search_notes') {
@@ -92,7 +103,10 @@ export function createFakeMcp({ notes = [], files = new Map(), extra = [], missi
       if (state.freePlan === 'rpc') return { error: { code: -32001, message: 'Evernote MCP is not available on your current plan. Upgrade to Personal or Professional.' } };
       return { result: { protocolVersion: msg.params?.protocolVersion ?? '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'evernote-mcp', version: '0.1.0' } } };
     }
-    if (msg.method === 'tools/list') return { result: { tools: TOOLS.filter((t) => !omitTools.includes(t.name)) } };
+    if (msg.method === 'tools/list') {
+      const tools = structuredClone(TOOLS).filter((t) => !omitTools.includes(t.name));
+      return { result: { tools: alter.tools ? alter.tools(tools) : tools } };
+    }
     if (msg.method === 'tools/call') return { result: callTool(msg.params?.name, msg.params?.arguments) };
     return { error: { code: -32601, message: 'Method not found' } };
   }
@@ -147,7 +161,7 @@ export function createFakeMcp({ notes = [], files = new Map(), extra = [], missi
         state.refresh.add(refresh);
         return json(200, { access_token: issue(), token_type: 'Bearer', expires_in: accessTtl, refresh_token: refresh, scope: 'read' });
       }
-      if (p.get('grant_type') === 'refresh_token' && state.refresh.has(p.get('refresh_token'))) {
+      if (p.get('grant_type') === 'refresh_token' && !refuseRefresh && state.refresh.has(p.get('refresh_token'))) {
         state.tokenGrants.refresh_token += 1;
         return json(200, { access_token: issue(), token_type: 'Bearer', expires_in: accessTtl, scope: 'read' });
       }

@@ -16,7 +16,8 @@
     "test:core": "npm --prefix packages/enex-core test",
     "test:all": "npm test && npm run test:core",
     "build:sea": "node scripts/build-sea.mjs",
-    "test:sea": "node scripts/build-sea.mjs && node --no-warnings=ExperimentalWarning --test test/sea/*.test.mjs"
+    "test:sea": "node scripts/build-sea.mjs && node --no-warnings=ExperimentalWarning --test test/sea/*.test.mjs",
+    "shapes:baseline": "node --no-warnings=ExperimentalWarning scripts/shapes-baseline.mjs"
   },
   "license": "Apache-2.0",
   "dependencies": {
