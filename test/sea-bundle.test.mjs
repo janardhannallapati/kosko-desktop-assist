@@ -141,3 +141,12 @@ test('convert-enml with no input exits 2, from the source and the bundle', () =>
     assert.match(r.stderr, /no ENML on standard input/);
   }
 });
+
+test('shapes (Kosko 537) is in the bundle with its baseline: the module loads and refuses a bad --notes the same way', () => {
+  assert.ok(bundleText.includes('kosko-shapes-baseline'), 'the committed baseline is carried by the bundle, not read from disk');
+  for (const r of both(['shapes', '--plan', 'p', '--out', 'o', '--notes', '0'])) {
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /--notes must be a whole number from 1 to 50/);
+    assert.doesNotMatch(r.stderr, /ExperimentalWarning|at .*:\d+:\d+/);
+  }
+});

@@ -68,6 +68,11 @@ The first step sends nothing: it writes a plan you can read in the `kosko-plan` 
   that did not match. Nothing is sent anywhere.
 - `probe-mcp`: a measurement tool that checks how fast Evernote's MCP server hands out notes. It never stores
   note titles or bodies, and it never writes your tokens to disk.
+- `shapes`: before a big `send --evernote`, checks that Evernote's MCP server still answers the way this tool was
+  tested against. It signs you in to Evernote (read only), lists every note and compares the list with the dry run's
+  plan, fetches a few notes and attachments, and renews the sign-in once. Each check prints green or red, and
+  `kosko-shapes.json` records the structure of each answer, counts and note ids: never a title, a note's text, a file
+  name or a token. It sends nothing to Kosko. Exit code 0 when every check is green.
 - `connect`: checks a Kosko import token (made on Kosko's Import page; it starts with `cvit_`, lasts 24 hours and can
   call only the import routes) and prints the storage you have used and have left. It sends nothing else. Paste the
   token when asked, or set `KOSKO_IMPORT_TOKEN`; there is no `--token` option, because a flag is saved in your shell
@@ -85,6 +90,7 @@ node bin/kosko-assist.mjs accounts --data-dir <folder>   # anywhere else, e.g. W
 node bin/kosko-assist.mjs dry-run --out ./kosko-dry-run    # add --data-dir as above where needed
 node bin/kosko-assist.mjs match ./my-exports --out ./kosko-match   # a folder of .enex files, or the files themselves
 node bin/kosko-assist.mjs probe-mcp --out ./probe-out
+node bin/kosko-assist.mjs shapes --plan ./kosko-dry-run --out ./kosko-shapes   # paid Evernote plans, before send --evernote
 node bin/kosko-assist.mjs connect                          # or --app http://127.0.0.1:3003 for a local Kosko
 node bin/kosko-assist.mjs send --plan ./kosko-dry-run      # add --data-dir / --app as above where needed
 npm test

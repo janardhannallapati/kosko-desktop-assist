@@ -90,6 +90,9 @@ export async function signIn({ origin = EVERNOTE_MCP, fetchImpl = fetch, port = 
   const code = await authorize({ url, port, state, redirectUri, log, signal });
   let tok = await exchangeCode(as, { clientId, code, verifier, redirectUri, resource }, fetchImpl);
   const stats = { refreshes: 0 };
+  // 537: what the shape check may write about the sign-in (never the values), and every value it must never write.
+  const token = { expiresIn: tok.expires_in ?? null, refreshIssued: Boolean(tok.refresh_token) };
+  const secrets = new Set([verifier, state, code, tok.access_token, tok.refresh_token].filter(Boolean));
   const renew = async () => {
     if (!tok.refresh_token) throw new EvernoteAuthFailed('The Evernote sign-in expired and cannot be renewed.');
     let next;
@@ -101,13 +104,14 @@ export async function signIn({ origin = EVERNOTE_MCP, fetchImpl = fetch, port = 
     }
     tok = { refresh_token: tok.refresh_token, ...next };
     stats.refreshes += 1;
+    [tok.access_token, next.refresh_token].filter(Boolean).forEach((t) => secrets.add(t));
   };
   const getToken = async () => {
     if (tok.expires_in && Date.now() > tok.obtainedAt + (tok.expires_in - 60) * 1000) await renew();
     return tok.access_token;
   };
   const client = new McpClient({ url: new URL('/mcp', origin).toString(), getToken, onUnauthorized: renew, fetchImpl });
-  return { client, stats };
+  return { client, stats, token, secrets, forceRefresh: renew };
 }
 
 /** Every active note's GUID, by search_notes pages of 100 (startIndex), oldest first. */
@@ -148,7 +152,7 @@ export async function fetchNoteBody(call, guid) {
  * { call, listed, stats }. Any other failure is thrown: the person asked for formatted notes, so the run stops.
  */
 export async function openEvernote({ origin = EVERNOTE_MCP, fetchImpl = fetch, port = 8765, authorize = browserAuthorize,
-  log = () => {}, sleep, now, signal, callTimeoutMs = CALL_TIMEOUT_MS } = {}) {
+  log = () => {}, sleep, now, signal, callTimeoutMs = CALL_TIMEOUT_MS, observe } = {}) {
   const stats = { limits: 0, calls: 0, refreshes: 0 };
   // Every OAuth and MCP request carries the run's signal and its own deadline (review T1/T2).
   const timedFetch = (url, init = {}) => fetchImpl(url, { ...init, signal: deadline(signal, callTimeoutMs) });
@@ -161,7 +165,7 @@ export async function openEvernote({ origin = EVERNOTE_MCP, fetchImpl = fetch, p
   try {
     const session = await signIn({ origin, fetchImpl: timedFetch, port, authorize, log, signal });
     const { client } = session;
-    await client.initialize();
+    const server = await client.initialize();
     await client.listTools();
     const missing = NEEDED.filter((t) => !client.tools.has(t));
     if (missing.length) throw new Error(`Evernote's server does not offer ${missing.join(' and ')}, so formatted notes cannot be fetched.`);
@@ -170,11 +174,15 @@ export async function openEvernote({ origin = EVERNOTE_MCP, fetchImpl = fetch, p
       onLimit: ({ waitedMs }) => { stats.limits += 1; log(`Evernote asked the tool to slow down; waiting ${Math.round(waitedMs / 1000)} s.`); } });
     const call = (name, args) => pacer.run(async () => {
       stats.calls += 1;
-      return resultData((await client.callTool(name, args)).result);
+      observe?.({ name, args }); // 537 review A2: the arguments are seen even when the call is refused
+      const { result } = await client.callTool(name, args);
+      const data = resultData(result);
+      observe?.({ name, args, result, data }); // 537: the shape check watches the run's own calls
+      return data;
     });
     const listed = await listNoteGuids(call);
     Object.defineProperty(stats, 'refreshes', { get: () => session.stats.refreshes, enumerable: true });
-    return { freePlan: false, call, listed, stats, pacer, wait };
+    return { freePlan: false, call, listed, stats, pacer, wait, session, server };
   } catch (e) {
     if (signal?.aborted) throw e;
     if (isFreePlanRefusal(e)) return { freePlan: true, stats };
