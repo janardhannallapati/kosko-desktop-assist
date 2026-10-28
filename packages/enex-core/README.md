@@ -49,6 +49,8 @@ implementation's. The package never touches a global DOM, makes no network call 
 
 It holds no node views, no editor behaviour and no HTML sanitiser. Kosko's editor adds those itself. The
 `rawHtml` node stores third-party HTML as an attribute and never renders it; showing it safely is the host's job.
+Likewise `inlineMath` and `blockMath` store a formula's LaTeX source only: there is no katex here, and rendering
+it (safely, with KaTeX's `trust` off) is the host's job.
 
 ## Development
 

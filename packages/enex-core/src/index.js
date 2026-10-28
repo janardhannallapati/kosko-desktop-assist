@@ -8,6 +8,7 @@ export { readEnex } from './enex/enex-reader.js';
 export { formatEnexDate } from './enex/enex-date.js';
 export { NOTE_SCHEMA_EXTENSIONS, noteSchema, EvernoteLinkOrigin } from './schema/note-schema.js';
 export { NoteImage, NoteAttachment } from './schema/media-nodes.js';
+export { InlineMath, BlockMath, MATH_EXTENSIONS } from './schema/math-nodes.js';
 export { RawHtml, NoteLocked, OPAQUE_EXTENSIONS } from './schema/opaque-nodes.js';
 export { NoteTaskItem, TASK_EXTENSIONS } from './schema/task-items.js';
 export {
