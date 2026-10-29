@@ -36,7 +36,7 @@
     "jsdom": "29.1.1"
   },
   "devDependencies": {
-    "@kosko-app/design-tokens": "0.2.0",
+    "@kosko-app/design-tokens": "0.3.0",
     "esbuild": "0.28.2",
     "postject": "1.0.0-alpha.6"
   }
