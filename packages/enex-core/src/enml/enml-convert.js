@@ -118,8 +118,9 @@ function finish(nodes, media, report) {
     if (match) {
       const m = media[Number(match[1])];
       const path = `enex-resource:${m.hash}`;
-      if (node.type === 'noteImage') Object.assign(node.attrs, { src: null, path, alt: m.alt ?? null, width: m.width, height: m.height });
-      else {
+      if (node.type === 'noteImage') {
+        Object.assign(node.attrs, { src: null, path, alt: m.alt ?? null, width: m.width, height: m.height, displayWidth: m.displayWidth ?? null, align: m.align ?? null, caption: m.caption ?? null });
+      } else {
         const mediaType = m.mime.startsWith('video/') ? 'video' : m.mime.startsWith('audio/') ? 'audio' : 'file';
         Object.assign(node.attrs, { src: null, path, mediaType, mimeType: m.mime || null, filename: null });
       }

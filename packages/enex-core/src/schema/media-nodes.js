@@ -5,6 +5,17 @@
 // field below unchanged.
 import { Node } from '@tiptap/core';
 import Image from '@tiptap/extension-image';
+import { imageDisplayWidth, imageAlign, imageCaption } from '../leaves/block-values.js';
+
+// One of the picture's 0.5.0 attributes: read through its rule, and rendered only when it passes the rule.
+const ruled = (name, dataName, rule) => ({
+  default: null,
+  parseHTML: (element) => rule(element.getAttribute(dataName)),
+  renderHTML: (attributes) => {
+    const value = rule(attributes[name]);
+    return value === null ? {} : { [dataName]: String(value) };
+  }
+});
 
 // The stock Image extension plus `path` (the durable storage path, the source of truth) and the editor's
 // own state attributes.
@@ -24,7 +35,14 @@ export const NoteImage = Image.extend({
       refused: { default: false, rendered: false },
       // An import placeholder's reason (why the file did not arrive). Kept in the note's JSON, never
       // rendered to HTML.
-      missing: { default: null, rendered: false }
+      missing: { default: null, rendered: false },
+      // 0.5.0 (Kosko 726). `width` and `height` above stay the picture's own pixel size; these three say how
+      // it is SHOWN. displayWidth is a whole percentage of the text column (10 to 100), so a desk, a peek
+      // panel and a phone agree; null is the full column.
+      displayWidth: ruled('displayWidth', 'data-display-width', imageDisplayWidth),
+      align: ruled('align', 'data-align', imageAlign),
+      // The figure's visible text, separate from `alt`. Plain text, one line, at most 500 characters.
+      caption: ruled('caption', 'data-caption', imageCaption)
     };
   }
 });

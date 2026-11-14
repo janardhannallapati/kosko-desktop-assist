@@ -18,6 +18,7 @@ import { OPAQUE_EXTENSIONS } from './opaque-nodes.js';
 import { TASK_EXTENSIONS } from './task-items.js';
 import { NoteImage, NoteAttachment } from './media-nodes.js';
 import { MATH_EXTENSIONS } from './math-nodes.js';
+import { BLOCK_EXTENSIONS } from './block-nodes.js';
 import { isAllowedNoteLink, isAppLinkScheme } from '../leaves/note-link-schemes.js';
 
 // A link the Evernote import rewrote to a Kosko note keeps the `evernote:` address it replaced, so a link
@@ -64,7 +65,9 @@ export const NOTE_SCHEMA_EXTENSIONS = Object.freeze([
   NoteImage,
   NoteAttachment,
   // Inline and block formulas, stored as their LaTeX source (math-nodes.js; Kosko 655).
-  ...MATH_EXTENSIONS
+  ...MATH_EXTENSIONS,
+  // 0.5.0: a callout, a toggle, a contents block and a table cell's shade (block-nodes.js; Kosko 726).
+  ...BLOCK_EXTENSIONS
 ]);
 
 let cached;

@@ -3,11 +3,15 @@
 // seam of "one element in, one output out" — nothing here recurses back into the pre-pass, which is what
 // lets it live apart from it.
 import { NOTE_UPLOADABLE_MIME, CONVERTED_MIME } from '../leaves/note-mime.js';
+import { displayWidthOfMedia, naturalSizeOfMedia, alignOfMedia, captionOfMedia } from './enml-kosko-blocks.js';
 
 // The image types the library stores as images, derived from the one allowlist (`222`: two lists for one
 // concept drift) — the UPLOADABLE set, so an SVG never becomes an image node while W2 has not made it
 // safe to serve — plus HEIC/HEIF, which the upload path converts. Everything else is an attachment.
 const IMAGE_NODE_MIME = new Set([...[...NOTE_UPLOADABLE_MIME].filter((m) => m.startsWith('image/')), ...CONVERTED_MIME]);
+
+// Whether an <en-media> is one the library stores as a picture.
+export const isImageMedia = (xml) => xml?.localName === 'en-media' && IMAGE_NODE_MIME.has((xml.getAttribute('type') || '').toLowerCase());
 
 export const bump = (bag, key) => {
   bag[key] = (bag[key] || 0) + 1;
@@ -24,7 +28,14 @@ export function mediaHtml(xml, ctx) {
   };
   const node = IMAGE_NODE_MIME.has(mime) ? 'noteImage' : 'noteAttachment';
   const index = ctx.media.length;
-  ctx.media.push({ hash, mime, node, width: size('width'), height: size('height'), alt: xml.getAttribute('alt') });
+  const entry = { hash, mime, node, width: size('width'), height: size('height'), alt: xml.getAttribute('alt') };
+  // 0.5.0 (Kosko 726): how a picture is shown. A width narrower than the column, the wrapper's alignment, and
+  // the caption line Kosko's export wrote after it.
+  if (node === 'noteImage') {
+    Object.assign(entry, { displayWidth: displayWidthOfMedia(xml, entry.width), align: alignOfMedia(xml), caption: captionOfMedia(xml, isImageMedia) });
+    Object.assign(entry, naturalSizeOfMedia(xml) ?? {});
+  }
+  ctx.media.push(entry);
   // A sentinel `src` the post-pass swaps for the real attributes, so no value passes through Tiptap's
   // attribute coercion (`fromString`, 129:B1/248) on its way into the document.
   if (node === 'noteImage') {

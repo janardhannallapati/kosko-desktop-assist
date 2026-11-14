@@ -1,4 +1,4 @@
-// The seven colour values the schema and the converter need.
+// The colour values the schema and the converter need.
 //
 // Kosko's design tokens (design/tokens.json, generated into lib/design-tokens.js) are the design source.
 // This package cannot read that generated file, so it carries these values, and Kosko's
@@ -12,6 +12,17 @@ export const NOTE_PALETTE = Object.freeze({
     'note-fg-blue': '#2563eb',
     'note-fg-purple': '#7c3aed',
     'note-fg-grey': '#4b5563'
+  }),
+  // The light-theme value of each table cell shade (`--cell-*`, Kosko 726). Kosko's Evernote export writes
+  // these as a cell's `background-color`, and the converter reads exactly these back as the shade's name.
+  cellLight: Object.freeze({
+    grey: '#f4f4f5',
+    red: '#fef2f2',
+    orange: '#fef2ea',
+    yellow: '#fcf4db',
+    green: '#e7f9ed',
+    blue: '#eff5fe',
+    purple: '#f6f3fe'
   }),
   // The highlight an imported `--en-highlight` gets when Evernote did not say which colour.
   highlightImportDefault: 'yellow'
