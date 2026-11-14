@@ -13,6 +13,19 @@ The part of [Kosko](https://kosko.app) that has to give the same answer everywhe
 - **`NOTE_SCHEMA_EXTENSIONS` / `noteSchema()`** are the note schema the converter targets. A Tiptap schema is an
   allowlist: anything it does not name is deleted. So the converter and the editor must share one.
 
+- **0.5.0 adds five things a note can store** (the contract is Kosko's doc 726): a `callout` (five kinds), a toggle
+  (`details`, `detailsSummary`, `detailsContent`, the names and HTML of `@tiptap/extension-details`), a
+  `tableOfContents` block that stores nothing, a picture's `displayWidth`, `align` and `caption`, and a table
+  cell's `background` shade. Each value is one of a fixed list or a bounded whole number (`calloutKind`,
+  `cellShade`, `imageDisplayWidth`, `imageAlign`, `imageCaption`); a colour or a style from a file is never stored.
+  `convertEnml` reads them back from the markers Kosko's Evernote export writes (`KOSKO_ENML`), reads a picture's
+  display width from Kosko's marker or from an Evernote resize (a share of a 720 px column), and maps a cell's colour to the nearest shade name.
+- **`degradeDoc(doc, schema)`** (0.5.0) is what a reader runs before loading a note: a block its schema does not
+  know becomes one it does (a callout becomes a quote, a toggle becomes its summary in bold and then its body, a
+  caption becomes a paragraph), and no text is dropped. Without it Tiptap loads an **empty document** for a note
+  holding an unknown block. `schemaVersionNeeded(doc)` and `NOTE_SCHEMA_VERSION` let a server refuse a save from
+  a client too old to have read the stored note.
+
 Kosko's web import and the [desktop tool](../../README.md) in this repository both use this package, pinned to
 one exact version, so the same note always becomes the same Kosko note and the same key.
 
@@ -51,6 +64,8 @@ It holds no node views, no editor behaviour and no HTML sanitiser. Kosko's edito
 `rawHtml` node stores third-party HTML as an attribute and never renders it; showing it safely is the host's job.
 Likewise `inlineMath` and `blockMath` store a formula's LaTeX source only: there is no katex here, and rendering
 it (safely, with KaTeX's `trust` off) is the host's job.
+The 0.5.0 blocks are schema only too: the callout's icon, the toggle's folding, the contents list and the cell
+colours are drawn by the host from the stored names.
 
 ## Development
 

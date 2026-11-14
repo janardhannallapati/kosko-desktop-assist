@@ -6,7 +6,8 @@
 // decision table in .mdd/docs/252-enml-tiptap-converter.md is the spec, one row per branch below.
 import { NOTE_PALETTE } from '../leaves/note-palette.js';
 import { styleMap, isCodeBlock, codeLanguage, isHighlight, taskGroupId, styleWithout } from './enml-evernote-styles.js';
-import { mediaHtml, rawHtmlBlock, remoteImageHtml, codeLines, flattenedLeaves, copyElement, bump } from './enml-blocks.js';
+import { mediaHtml, rawHtmlBlock, remoteImageHtml, codeLines, flattenedLeaves, copyElement, bump, isImageMedia } from './enml-blocks.js';
+import { koskoBlockHtml, shadeOfCell } from './enml-kosko-blocks.js';
 import {
   leadingTodo,
   isTodoLine,
@@ -123,6 +124,9 @@ const NOT_IN_CODE = ['en-media', 'en-crypt', 'img', 'table', 'en-todo'];
 
 function divHtml(xml, ctx, depth) {
   const map = styleMap(xml);
+  // Kosko's own blocks, marked by its export (enml-kosko-blocks.js). `undefined` means "not one of them".
+  const kosko = koskoBlockHtml(xml, map, ctx, depth, { childrenInto, appendAll, isImage: isImageMedia });
+  if (kosko !== undefined) return kosko;
   if (isCodeBlock(map) && NOT_IN_CODE.every((name) => xml.getElementsByTagName(name).length === 0)) {
     const pre = ctx.doc.createElement('pre');
     const code = ctx.doc.createElement('code');
@@ -248,6 +252,15 @@ export function toHtml(xml, ctx, depth = 0) {
     }
     case 'map':
       return rawHtmlBlock(xml, ctx);
+    case 'td':
+    case 'th': {
+      // A cell's colour becomes the NAME of the nearest shade; the colour itself is not kept (Kosko 726).
+      const cell = copyElement(xml, name, ctx);
+      const shade = shadeOfCell(xml);
+      if (shade) cell.setAttribute('data-background', shade);
+      childrenInto(cell, xml, ctx, depth + 1);
+      return cell;
+    }
     case 'q': {
       const frag = ctx.doc.createDocumentFragment();
       frag.appendChild(ctx.doc.createTextNode('“'));

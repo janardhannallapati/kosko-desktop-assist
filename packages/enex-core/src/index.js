@@ -9,6 +9,14 @@ export { formatEnexDate } from './enex/enex-date.js';
 export { NOTE_SCHEMA_EXTENSIONS, noteSchema, EvernoteLinkOrigin } from './schema/note-schema.js';
 export { NoteImage, NoteAttachment } from './schema/media-nodes.js';
 export { InlineMath, BlockMath, MATH_EXTENSIONS } from './schema/math-nodes.js';
+export { Callout, Details, DetailsSummary, DetailsContent, TableOfContents, CellBackground, BLOCK_EXTENSIONS } from './schema/block-nodes.js';
+export {
+  CALLOUT_KINDS, CELL_SHADES, IMAGE_ALIGNS, DISPLAY_WIDTH_MIN, DISPLAY_WIDTH_MAX, CAPTION_MAX,
+  calloutKind, cellShade, imageAlign, imageDisplayWidth, imageCaption
+} from './leaves/block-values.js';
+export { KOSKO_ENML, ENML_COLUMN_PX, displayWidthOfPixels, displayWidthOfMedia } from './enml/enml-kosko-blocks.js';
+export { cellShadeOfColour } from './leaves/cell-shade.js';
+export { degradeDoc, schemaVersionNeeded, NOTE_SCHEMA_VERSION } from './schema/degrade-doc.js';
 export { RawHtml, NoteLocked, OPAQUE_EXTENSIONS } from './schema/opaque-nodes.js';
 export { NoteTaskItem, TASK_EXTENSIONS } from './schema/task-items.js';
 export {
