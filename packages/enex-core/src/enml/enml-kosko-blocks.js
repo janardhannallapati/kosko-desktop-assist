@@ -20,7 +20,14 @@ export const KOSKO_ENML = Object.freeze({
   contents: '--kosko-contents',
   caption: '--kosko-caption',
   // On an <en-media>: the picture's display width as a whole percentage, exactly as the note stores it.
-  width: '--kosko-width'
+  width: '--kosko-width',
+  // 0.6.0 (Kosko 742): on a <blockquote>, the saved item it quotes, the PDF page, the position hint and the passage's length; and on
+  // the quote's last line, the cite line. Read by enml-quote-source.js.
+  quoteSource: '--kosko-quote-source',
+  quotePage: '--kosko-quote-page',
+  quoteStart: '--kosko-quote-start',
+  quoteLength: '--kosko-quote-length',
+  quoteCite: '--kosko-quote-cite'
 });
 
 // The column an exported pixel width is written against, and read against.
@@ -136,6 +143,12 @@ function isHeadingList(xml) {
 // (a callout's label, a claimed caption); `undefined` when the div is nothing of Kosko's.
 //   h: { childrenInto, appendAll, isImage } from the pre-pass, passed in so this file imports nothing from it.
 export function koskoBlockHtml(xml, map, ctx, depth, h) {
+  // A sourced quote's cite line, already read into the quote's attributes (enml-quote-source.js).
+  if (ctx.quoteCites?.has(xml)) return null;
+  return ownBlockHtml(xml, map, ctx, depth, h);
+}
+
+function ownBlockHtml(xml, map, ctx, depth, h) {
   if (map.has(KOSKO_ENML.calloutLabel) && marked(xml.parentNode, KOSKO_ENML.callout) && isLabel(xml)) {
     ctx.skip.add(xml);
     return null;

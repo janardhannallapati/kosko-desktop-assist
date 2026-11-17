@@ -17,6 +17,17 @@ export {
 export { KOSKO_ENML, ENML_COLUMN_PX, displayWidthOfPixels, displayWidthOfMedia } from './enml/enml-kosko-blocks.js';
 export { cellShadeOfColour } from './leaves/cell-shade.js';
 export { degradeDoc, schemaVersionNeeded, NOTE_SCHEMA_VERSION } from './schema/degrade-doc.js';
+export { QuoteSource, QUOTE_EXTENSIONS } from './schema/quote-source-attrs.js';
+export {
+  QUOTE_SOURCE_ATTRS, QUOTE_SOURCE_DATA, SOURCE_TITLE_MAX, SOURCE_URL_MAX, SOURCE_EXACT_MAX, SOURCE_EXACT_HALF,
+  SOURCE_CONTEXT_MAX, SOURCE_START_MAX, SOURCE_PAGE_MAX, SOURCE_LENGTH_MAX,
+  quoteSourceItem, quoteSourceTitle, quoteSourceUrl, quoteSourcePassage, quoteSourceExact, quoteSourceCut,
+  quoteSourcePrefix, quoteSourceSuffix, quoteSourceStart, quoteSourcePage, quoteSourceLength, quoteSourceAttrs,
+  readQuoteSource, readSourceAnchor
+} from './leaves/quote-source.js';
+export { anchorText, makeAnchor } from './anchor/anchor-text.js';
+export { findPassage, PASSAGE_PLACES_MAX } from './anchor/find-passage.js';
+export { isLetterBoundary } from './anchor/letter-boundary.js';
 export { RawHtml, NoteLocked, OPAQUE_EXTENSIONS } from './schema/opaque-nodes.js';
 export { NoteTaskItem, TASK_EXTENSIONS } from './schema/task-items.js';
 export {

@@ -8,6 +8,7 @@ import { NOTE_PALETTE } from '../leaves/note-palette.js';
 import { styleMap, isCodeBlock, codeLanguage, isHighlight, taskGroupId, styleWithout } from './enml-evernote-styles.js';
 import { mediaHtml, rawHtmlBlock, remoteImageHtml, codeLines, flattenedLeaves, copyElement, bump, isImageMedia } from './enml-blocks.js';
 import { koskoBlockHtml, shadeOfCell } from './enml-kosko-blocks.js';
+import { quoteHtml } from './enml-quote-source.js';
 import {
   leadingTodo,
   isTodoLine,
@@ -261,6 +262,8 @@ export function toHtml(xml, ctx, depth = 0) {
       childrenInto(cell, xml, ctx, depth + 1);
       return cell;
     }
+    case 'blockquote': // with its source when Kosko marked it (enml-quote-source.js), else copied as before
+      return quoteHtml(xml, ctx, depth, { childrenInto, copyElement, block: BLOCK, dropped: DROPPED });
     case 'q': {
       const frag = ctx.doc.createDocumentFragment();
       frag.appendChild(ctx.doc.createTextNode('“'));

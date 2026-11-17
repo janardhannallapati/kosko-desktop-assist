@@ -297,8 +297,8 @@ describe('degradeDoc: edges', () => {
 });
 
 describe('schemaVersionNeeded: the number a save is checked against', () => {
-  it('this release writes schema version 2', () => {
-    expect(NOTE_SCHEMA_VERSION).toBe(2);
+  it('this release writes schema version 3 (0.6.0; the 3 cases are in degrade-quote-source.test.js)', () => {
+    expect(NOTE_SCHEMA_VERSION).toBe(3);
   });
 
   it('a note with none of the 0.5.0 blocks needs version 1 (benign: an old tab may still save it)', () => {
