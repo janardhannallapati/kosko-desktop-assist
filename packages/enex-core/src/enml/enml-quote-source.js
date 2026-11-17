@@ -12,12 +12,16 @@
 // address passes the scheme rule before it is kept. The passage (`sourceExact`) is rebuilt from the quote's
 // own text; the words around it are not in the file, so they are empty.
 //
+// THE COST IS LINEAR IN THE FILE, however quotes are nested, and a passage is held in bounded space
+// (`readPassages` below; a file of 400 quotes one inside another once cost depth times size).
+//
 // NO WORD IS LOST. A quote whose marker is not a uuid is converted as the plain quote it is. The cite line is
 // taken out of the quote's text only when it is the quote's last line and has exactly the shape above; a line
 // of any other shape stays an ordinary line of the quote.
 import { QUOTE_SOURCE_DATA, quoteSourceAttrs, quoteSourceItem, quoteSourceTitle, quoteSourceUrl } from '../leaves/quote-source.js';
 import { styleMap } from './enml-evernote-styles.js';
 import { KOSKO_ENML } from './enml-kosko-blocks.js';
+import { newPassage, addText, addPassage, passageText } from './enml-passage-text.js';
 
 const DASH = '—';
 const isText = (n) => n.nodeType === 3 || n.nodeType === 4;
@@ -33,7 +37,7 @@ function lastLine(quoteXml) {
 
 // { xml, title, url } for a last line that is exactly Kosko's cite line: a div marked `1` holding a dash and
 // then one link, the link holding text only, its text a whole title and its address a web address.
-function citeOf(quoteXml) {
+export function citeOf(quoteXml) {
   const xml = lastLine(quoteXml);
   if (xml?.localName !== 'div' || styleMap(xml).get(KOSKO_ENML.quoteCite) !== '1') return null;
   const parts = Array.from(xml.childNodes).filter((n) => !isBlank(n));
@@ -46,26 +50,64 @@ function citeOf(quoteXml) {
   return title !== null && title === oneLine(link.textContent) && url !== null ? { xml, title, url } : null;
 }
 
-const isSourced = (xml) => quoteSourceItem(styleMap(xml).get(KOSKO_ENML.quoteSource)) !== null;
+// What is known of one <blockquote> of the file, worked out ONCE per conversion: its style, whether Kosko
+// marked it as sourced, its cite line, and (once read) its passage. Kept in a WeakMap that belongs to the
+// conversion context (`ctx.quotes`; never module state), so it lives exactly as long as one conversion run.
+function infoOf(xml, ctx) {
+  const known = (ctx.quotes ??= new WeakMap());
+  let info = known.get(xml);
+  if (!info) {
+    const map = styleMap(xml);
+    const sourced = quoteSourceItem(map.get(KOSKO_ENML.quoteSource)) !== null;
+    info = { map, sourced, cite: sourced ? citeOf(xml) : null, passage: null };
+    known.set(xml, info);
+  }
+  return info;
+}
 
-// The quote's own text, one space between its lines, without what the converter drops (a script, a style)
-// and without any cite line that is consumed: its own, and that of every sourced quote inside it, whose cite
-// line becomes that quote's title and is not text of the note either.
-function passageOf(quoteXml, citeXml, h) {
-  let out = '';
-  const cites = new Set([citeXml]);
-  const stack = [quoteXml];
+// Reads the passage of `rootXml` AND of every sourced quote inside it, in one walk of its subtree.
+//
+// A quote's own text: one space after each block and each <br>, without what the converter drops (a script,
+// a style), and without any cite line that is consumed: its own, and that of every sourced quote inside it
+// (whose cite line becomes that quote's title and is not text of the note either). A plain quote's cite-like
+// line is ordinary text and stays.
+//
+// LINEAR, WHATEVER THE NESTING. Text goes to the innermost sourced quote that is open; when a quote closes,
+// its finished passage is added to the quote around it in constant time (enml-passage-text.js). So every node
+// is visited once per conversion, where reading each quote separately cost depth times size.
+function readPassages(rootXml, ctx, h) {
+  const open = [];
+  const cites = new Set();
+  const stack = [rootXml];
   while (stack.length) {
     const node = stack.pop();
-    if (typeof node === 'string') out += node;
-    else if (isText(node)) out += node.data;
+    const into = open[open.length - 1];
+    if (node === ' ') {
+      if (into) addText(into, node);
+    } else if (node.passage !== undefined) {
+      // A marker: this quote's children are done.
+      node.passage = open.pop();
+      if (open.length) addPassage(open[open.length - 1], node.passage);
+    } else if (isText(node)) addText(into, node.data);
     else if (node.nodeType === 1 && !cites.has(node) && !h.dropped.has(node.localName)) {
-      if (node !== quoteXml && node.localName === 'blockquote' && isSourced(node)) cites.add(citeOf(node)?.xml);
       if (h.block.has(node.localName) || node.localName === 'br') stack.push(' ');
+      const info = node.localName === 'blockquote' ? infoOf(node, ctx) : null;
+      if (info?.sourced) {
+        cites.add(info.cite?.xml);
+        open.push(newPassage());
+        stack.push(info);
+      }
       for (let i = node.childNodes.length - 1; i >= 0; i -= 1) stack.push(node.childNodes[i]);
     }
   }
-  return out;
+}
+
+// The stand-in text for a sourced quote's passage (what `quoteSourcePassage` is then given). Exported for the
+// tests that hold it to the plain way of reading it.
+export function quotePassageText(xml, ctx, h) {
+  const info = infoOf(xml, ctx);
+  if (!info.passage) readPassages(xml, ctx, h);
+  return passageText(info.passage);
 }
 
 // A <blockquote> -> the schema's blockquote. One that Kosko marked as sourced carries the source as the
@@ -73,18 +115,17 @@ function passageOf(quoteXml, citeXml, h) {
 //   h: { childrenInto, copyElement, block, dropped } from the pre-pass, passed in so this file imports
 //   nothing from it.
 export function quoteHtml(xml, ctx, depth, h) {
-  const map = styleMap(xml);
-  if (!isSourced(xml)) {
+  const { map, sourced, cite } = infoOf(xml, ctx);
+  if (!sourced) {
     const plain = h.copyElement(xml, 'blockquote', ctx);
     h.childrenInto(plain, xml, ctx, depth + 1);
     return plain;
   }
-  const cite = citeOf(xml);
   const attrs = quoteSourceAttrs({
     sourceItem: map.get(KOSKO_ENML.quoteSource),
     sourceTitle: cite?.title,
     sourceUrl: cite?.url,
-    sourceExact: passageOf(xml, cite?.xml, h),
+    sourceExact: quotePassageText(xml, ctx, h),
     sourceStart: map.get(KOSKO_ENML.quoteStart),
     sourceLength: map.get(KOSKO_ENML.quoteLength),
     sourcePage: map.get(KOSKO_ENML.quotePage)
