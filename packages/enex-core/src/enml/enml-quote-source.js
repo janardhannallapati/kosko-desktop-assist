@@ -47,7 +47,11 @@ export function citeOf(quoteXml) {
   const title = quoteSourceTitle(link.textContent);
   const url = quoteSourceUrl(link.getAttribute('href'));
   // A title the limit would cut stays a line of the quote: nothing is cut off unseen.
-  return title !== null && title === oneLine(link.textContent) && url !== null ? { xml, title, url } : null;
+  if (title === null || title !== oneLine(link.textContent) || url === null) return null;
+  // 0.6.1: a source with an address and no title is written with the address as the link's text (cut to the
+  // title limit when it is longer). Read back, that is no title, not a title that happens to be an address.
+  const shownAddress = title === url || title === quoteSourceTitle(url);
+  return { xml, title: shownAddress ? null : title, url };
 }
 
 // What is known of one <blockquote> of the file, worked out ONCE per conversion: its style, whether Kosko

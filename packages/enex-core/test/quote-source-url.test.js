@@ -94,6 +94,14 @@ describe('quoteSourceUrl: http or https only, no credentials, at most 2,000 char
     }
   });
 
+  it('half a surrogate pair, U+FFFE or U+FFFF anywhere refuses the address: an Evernote file cannot hold them (0.6.1)', () => {
+    for (const bad of ['https://example.com/\ufffe', 'https://example.com/a\uffffb', 'https://example.com/\ud800', 'https://example.com/?q=\udc00x', 'https://exa\ud83dmple.com/', 'https://example.com/#\ude00\ud83d']) {
+      expect(quoteSourceUrl(bad), JSON.stringify(bad)).toBeNull();
+    }
+    const whole = 'https://example.com/😀?q=\ud83d\ude00';
+    expect(quoteSourceUrl(whole)).toBe(whole);
+  });
+
   it('a joiner or non-joiner is allowed after the host (Persian and Indic addresses carry them), and nowhere in it', () => {
     for (const good of ['https://fa.example/می\u200cخواهم', 'https://te.example/క్\u200dష?q=క్\u200cష#క్\u200cష']) expect(quoteSourceUrl(good), good).toBe(good);
     for (const bad of ['https://exam\u200cple.com/', 'https://exam\u200dple.com/x', 'https://example.com/a\u200bb', 'https://example.com/a\u200eb', 'https://example.com/a\u2060b', 'https://example.com/?q=\u202ex']) expect(quoteSourceUrl(bad), JSON.stringify(bad)).toBeNull();

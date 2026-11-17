@@ -56,12 +56,17 @@ export const quoteSourceItem = (value) => (typeof value === 'string' && UUID.tes
 
 // Characters that are never part of a title and can make one read as something else: control characters, and
 // the bidi embedding, override and isolate controls (U+202A to U+202E, U+2066 to U+2069).
-const SPOOFING = /[\p{Cc}\u202a-\u202e\u2066-\u2069]/gu;
+//
+// 0.6.1: and what XML 1.0 cannot hold, which Kosko's Evernote exporter strips before it writes: half a
+// surrogate pair, U+FFFE and U+FFFF (the control characters it strips are in `Cc` already). Taken out of a
+// title and refused in an address, so a stored value is already what comes back from a file. In a `u`
+// pattern the surrogate range matches only a surrogate with no partner; a whole pair is one character.
+const SPOOFING = /[\p{Cc}\u202a-\u202e\u2066-\u2069\ud800-\udfff\ufffe\uffff]/gu;
 // Anywhere in an address, also: whitespace, a backslash, the zero-width space, direction marks, the word
 // joiner and invisible operators, the byte order mark. The zero-width joiner and non-joiner are NOT here:
 // Persian and Indic addresses carry them unencoded after the host. In the host they are refused with every
 // other character a host cannot hold (below).
-const HIDDEN_IN_URL = /[\s\\\p{Cc}\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2069\ufeff]/u;
+const HIDDEN_IN_URL = /[\s\\\p{Cc}\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2069\ufeff\ud800-\udfff\ufffe\uffff]/u;
 
 // One line of plain text. Control characters and bidi controls are taken out (owner, 2026-11-17): a title is
 // shown on the source chip, and a title holding a right-to-left override would be drawn as other words.
