@@ -223,6 +223,34 @@ describe('a cite line is consumed only in the exact shape Kosko writes', () => {
     expect(textOf(doc)).toBe('ab— In');
   });
 
+  it('0.6.1: a link whose text is its own address is a source with no title; the line is still consumed', () => {
+    const address = 'https://example.com/teams?a=1';
+    for (const shown of [address, `\n  ${address}  \n`]) {
+      const { doc } = conv(own(`${LINES}<div style="--kosko-quote-cite:1">— <a href="https://example.com/teams?a=1">${shown.replace('&', '&amp;')}</a></div>`));
+      const q = quoteIn(doc);
+      expect(q.attrs).toMatchObject({ sourceItem: ID, sourceTitle: null, sourceUrl: address });
+      expect(q.content).toHaveLength(2);
+      expect(textOf(doc)).toBe('Small teams plan in pairs.They review on Friday.');
+      expect(links(doc)).toEqual([]);
+    }
+  });
+
+  it('0.6.1: a long address shown cut to the title limit is no title either', () => {
+    const address = `https://example.com/${'p'.repeat(280)}`;
+    expect(address).toHaveLength(300);
+    const { doc } = conv(own(`${LINES}<div style="--kosko-quote-cite:1">— <a href="${address}">${address.slice(0, 200)}</a></div>`));
+    expect(quoteIn(doc).attrs).toMatchObject({ sourceTitle: null, sourceUrl: address });
+    expect(quoteIn(doc).content).toHaveLength(2);
+  });
+
+  it('0.6.1: a title that only begins like the address, or continues past it, is a title', () => {
+    const address = `https://example.com/${'p'.repeat(280)}`;
+    for (const title of ['https://example.com', address.slice(0, 199), address.slice(0, 150), 'https://example.com/pp and what it says', 'HTTPS://EXAMPLE.COM/teams']) {
+      const { doc } = conv(own(`${LINES}<div style="--kosko-quote-cite:1">— <a href="${title.startsWith('HTTPS') ? 'https://example.com/teams' : address}">${title}</a></div>`));
+      expect(quoteIn(doc).attrs.sourceTitle, title).toBe(title);
+    }
+  });
+
   it('whitespace around the dash and the link is not a different shape (benign path)', () => {
     const { doc } = conv(own(`${LINES}<div style="--kosko-quote-cite:1">\n  —\u00a0<a href="https://example.com/teams">How small teams plan</a>\n</div>\n`));
     expect(quoteIn(doc).attrs).toMatchObject({ sourceTitle: 'How small teams plan', sourceUrl: 'https://example.com/teams' });

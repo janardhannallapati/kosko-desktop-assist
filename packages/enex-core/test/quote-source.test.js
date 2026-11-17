@@ -86,6 +86,31 @@ describe('quoteSourceTitle: one line, at most 200 units', () => {
     expect(quoteSourceTitle('క్\u200cష')).toBe('క్\u200cష');
   });
 
+  // 0.6.1: Kosko's Evernote exporter strips what XML 1.0 cannot hold before it writes (`stripIllegal` in
+  // lib/export/enml-filter.js). The title rule takes the same characters out, so a stored title is already
+  // what comes back from a file.
+  const stripIllegal = (s) => s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '');
+
+  it('takes out half a surrogate pair and U+FFFE / U+FFFF, which an Evernote file cannot hold (0.6.1)', () => {
+    expect(quoteSourceTitle('a\ud800b')).toBe('ab');
+    expect(quoteSourceTitle('a\udc00b')).toBe('ab');
+    expect(quoteSourceTitle('\udc00\ud800 back to front')).toBe('back to front');
+    expect(quoteSourceTitle('a\ufffeb\uffffc')).toBe('abc');
+    expect(quoteSourceTitle('\ud800\ufffe')).toBeNull();
+    // A whole pair is a letter and stays.
+    expect(quoteSourceTitle('ok 😀 \ud83d\ude00 done')).toBe('ok 😀 😀 done');
+  });
+
+  it('a title that passed the rule is unchanged by the exporter\'s strip: it reads back the same after a round trip', () => {
+    const hostile = ['a\ud800b', '\udc00x', 'x\ud83d', 't\ufffe\uffff', 'a\u0000b\u0008c\u000bd\u001fe', '😀\ud800😀', 'tab\there', `${'a'.repeat(199)}\ud800😀`, 'plain title'];
+    for (const raw of hostile) {
+      const title = quoteSourceTitle(raw);
+      expect(stripIllegal(title), JSON.stringify(raw)).toBe(title);
+      expect(quoteSourceTitle(stripIllegal(title)), JSON.stringify(raw)).toBe(title);
+      expect(title.isWellFormed(), JSON.stringify(raw)).toBe(true);
+    }
+  });
+
   it('never splits a surrogate pair at the cut', () => {
     const cut = quoteSourceTitle(`${'a'.repeat(199)}😀 tail`);
     expect(cut).toBe('a'.repeat(199));

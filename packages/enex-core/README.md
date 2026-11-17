@@ -49,6 +49,11 @@ The part of [Kosko](https://kosko.app) that has to give the same answer everywhe
 - **`NOTE_SCHEMA_VERSION` is 3** (0.6.0). A note holding a quote with a valid `sourceItem` needs version 3, and
   `degradeDoc` against an older schema keeps the quote and its words and counts the attributes it dropped.
 
+- **0.6.1** makes a stored source equal to what an Evernote file can carry back. A cite line whose link text is
+  its own address (whole, or cut to 200 units) reads as a source with no title. `quoteSourceTitle` also takes
+  out half a surrogate pair, U+FFFE and U+FFFF, and `quoteSourceUrl` refuses an address holding one: XML 1.0
+  cannot hold them, and Kosko's exporter strips them.
+
 ### Reading a quote's source: `readQuoteSource(node)`, never `node.attrs`
 
 ```js
