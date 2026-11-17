@@ -18,9 +18,11 @@
 // client was built with against the version the STORED note needs, and refuses a save from a client too old
 // to have read that note correctly.
 
-// 1: everything through 0.4.x. 2: the 0.5.0 blocks. Raised only when a release adds something an older
-// reader would lose.
-export const NOTE_SCHEMA_VERSION = 2;
+import { readQuoteSource } from '../leaves/quote-source.js';
+
+// 1: everything through 0.4.x. 2: the 0.5.0 blocks. 3: a quote's source (0.6.0). Raised only when a release
+// adds something an older reader would lose.
+export const NOTE_SCHEMA_VERSION = 3;
 
 const V2_NODES = new Set(['callout', 'details', 'detailsSummary', 'detailsContent', 'tableOfContents']);
 // A Map, not an object: `type` is text a client wrote, and "constructor" or "__proto__" must find nothing.
@@ -29,18 +31,24 @@ const V2_ATTRS = new Map([['noteImage', ['displayWidth', 'align', 'caption']], [
 const isNode = (n) => n !== null && typeof n === 'object' && !Array.isArray(n);
 const childrenOf = (n) => (Array.isArray(n.content) ? n.content.filter(isNode) : []);
 const isSet = (v) => v !== null && v !== undefined;
+// 0.6.0 (Kosko 742): a quote that names the saved item it was taken from. An older reader loads the quote
+// with its words and without its source, and its next save would store it that way. `readQuoteSource`
+// decides, as it does for every reader: a quote whose item is missing or is not a uuid has no source, renders
+// as a plain quote everywhere, and so needs no newer reader.
+const isSourcedQuote = (node) => node.type === 'blockquote' && readQuoteSource(node) !== null;
 
 export function schemaVersionNeeded(doc) {
   if (!isNode(doc)) return 1;
+  let needed = 1;
   const stack = [doc];
   while (stack.length) {
     const node = stack.pop();
-    if (V2_NODES.has(node.type)) return 2;
+    if (isSourcedQuote(node)) return 3;
     const attrs = V2_ATTRS.get(node.type);
-    if (attrs && isNode(node.attrs) && attrs.some((name) => isSet(node.attrs[name]))) return 2;
+    if (V2_NODES.has(node.type) || (attrs && isNode(node.attrs) && attrs.some((name) => isSet(node.attrs[name])))) needed = 2;
     for (const child of childrenOf(node)) stack.push(child);
   }
-  return 1;
+  return needed;
 }
 
 const paragraphOf = (content) => (content.length ? { type: 'paragraph', content } : { type: 'paragraph' });

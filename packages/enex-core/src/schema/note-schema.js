@@ -19,6 +19,7 @@ import { TASK_EXTENSIONS } from './task-items.js';
 import { NoteImage, NoteAttachment } from './media-nodes.js';
 import { MATH_EXTENSIONS } from './math-nodes.js';
 import { BLOCK_EXTENSIONS } from './block-nodes.js';
+import { QUOTE_EXTENSIONS } from './quote-source-attrs.js';
 import { isAllowedNoteLink, isAppLinkScheme } from '../leaves/note-link-schemes.js';
 
 // A link the Evernote import rewrote to a Kosko note keeps the `evernote:` address it replaced, so a link
@@ -67,7 +68,9 @@ export const NOTE_SCHEMA_EXTENSIONS = Object.freeze([
   // Inline and block formulas, stored as their LaTeX source (math-nodes.js; Kosko 655).
   ...MATH_EXTENSIONS,
   // 0.5.0: a callout, a toggle, a contents block and a table cell's shade (block-nodes.js; Kosko 726).
-  ...BLOCK_EXTENSIONS
+  ...BLOCK_EXTENSIONS,
+  // 0.6.0: the saved item a quote was taken from, as attributes on the quote (quote-source-attrs.js; Kosko 742).
+  ...QUOTE_EXTENSIONS
 ]);
 
 let cached;

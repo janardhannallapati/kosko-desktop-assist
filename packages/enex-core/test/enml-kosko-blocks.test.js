@@ -13,8 +13,8 @@ import { KOSKO_ENML, ENML_COLUMN_PX, NOTE_PALETTE, CELL_SHADES, cellShadeOfColou
 const media = (extra = '') => `<en-media type="image/png" hash="0123456789abcdef0123456789abcdef"${extra}/>`;
 
 describe('the markers are one fixed set, exported for Kosko\'s exporter', () => {
-  it('names eight properties and the column width a pixel width is read against', () => {
-    expect(KOSKO_ENML).toEqual({
+  it('names eight properties (0.6.0 adds four, enml-quote-source.test.js) and the column width a pixel width is read against', () => {
+    expect(KOSKO_ENML).toMatchObject({
       callout: '--kosko-callout', calloutLabel: '--kosko-callout-label',
       toggle: '--kosko-toggle', toggleSummary: '--kosko-toggle-summary', toggleBody: '--kosko-toggle-body',
       contents: '--kosko-contents', caption: '--kosko-caption', width: '--kosko-width'
