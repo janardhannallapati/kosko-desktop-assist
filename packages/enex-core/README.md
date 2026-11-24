@@ -121,6 +121,11 @@ notes (`fingerprintNote`, `assignFingerprints`) and, since 0.2.1, holds the MIME
 `NOTE_UPLOADABLE_MIME`, `CONVERTED_MIME`), and since 0.3.0 `canonicalEnml` and `parseEvernoteNoteLink`. It
 needs no Tiptap peer.
 
+Since 0.6.2, `@kosko-app/enex-core/anchor` finds a quote's passage in its source on its own: `anchorText`,
+`makeAnchor`, `findPassage`, `PASSAGE_PLACES_MAX`, `isLetterBoundary`, `readQuoteSource` and `readSourceAnchor`,
+the same functions as the root entry. It imports no Tiptap module and no ENEX reader, so a bundler that keeps
+every export of a module it loads (React Native's Metro) carries only these files.
+
 `window` is always an argument. In a browser, pass the page's own `window`; in Node, pass any DOM
 implementation's. The package never touches a global DOM, makes no network call and reads no environment.
 
