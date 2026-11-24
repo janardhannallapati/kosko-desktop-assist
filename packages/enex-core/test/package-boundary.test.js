@@ -79,6 +79,39 @@ describe('package boundary', () => {
     expect(enex.NOTE_UPLOADABLE_MIME.has('image/png')).toBe(true);
   });
 
+  // 0.6.2 (Kosko 769 finding 16): the phone app reads a quote's passage through the root entry, and Metro
+  // bundles the whole root (no tree shaking): +1.48 MB of Hermes bytecode. ./anchor is the same functions alone.
+  it('./anchor reaches nothing but the anchor files and the quote-source leaf: no Tiptap, no ENEX reader', () => {
+    expect(pkg.exports['./anchor']).toBe('./src/anchor/index.js');
+    const entry = join(ROOT, pkg.exports['./anchor']);
+    const seen = new Set();
+    const bare = [];
+    const walk = (file) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      for (const spec of specifiers(readFileSync(file, 'utf8'))) {
+        if (spec.startsWith('.')) walk(resolve(dirname(file), spec));
+        else bare.push(spec);
+      }
+    };
+    walk(entry);
+    const files = [...seen].map((f) => relative(join(ROOT, 'src'), f)).sort();
+    expect(bare).toEqual([]);
+    expect(files.filter((f) => !f.startsWith('anchor/') && f !== 'leaves/quote-source.js')).toEqual([]);
+    expect(files).toContain('anchor/find-passage.js'); // it walked the files, not just the index
+  });
+
+  it('./anchor exports what reading a quote\'s passage needs, the same functions as the root entry', async () => {
+    const anchor = await import('../src/anchor/index.js');
+    const root = await import('../src/index.js');
+    const NAMES = ['anchorText', 'makeAnchor', 'findPassage', 'PASSAGE_PLACES_MAX', 'isLetterBoundary', 'readQuoteSource', 'readSourceAnchor'];
+    expect(Object.keys(anchor).sort()).toEqual([...NAMES].sort());
+    for (const name of NAMES) {
+      expect(anchor[name], name).toBeDefined();
+      expect(anchor[name], name).toBe(root[name]);
+    }
+  });
+
   it('marks every Tiptap peer optional (needed only through the root entry)', () => {
     for (const name of Object.keys(pkg.peerDependencies)) expect(pkg.peerDependenciesMeta?.[name]?.optional, name).toBe(true);
   });
